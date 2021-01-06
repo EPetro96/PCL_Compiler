@@ -7,6 +7,14 @@ Alexandros Sampanis
 
 A compiler for PCL, a simple imperative language. This was developed as a project for Compilers' class in NTUA.  
 
+## Prequisities
+The PCL compiler was developed and tested using:  
+C++11  
+bison (GNU Bison) 3.0.4  
+flex 2.6.0  
+llvm 7.0.1  
+python 3.7  
+
 ## Installation Instructions:
 1) in root directory: make  
 2) make install (superuser privileges)  
