@@ -1,0 +1,3 @@
+2)note for readBoolean: use boolconst with true/false, not 0/1
+3)goto supports labels declared b4 it
+4)forward declarations don't work

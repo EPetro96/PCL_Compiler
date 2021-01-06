@@ -1,0 +1,9 @@
+**** Issues ****
+Reals(trunc,ord dont work)
+read/writeReal
+readString
+
+funcs/procs with no parameters give seg fault (i think its ok)
+
+**** Not done yet ****
+readString

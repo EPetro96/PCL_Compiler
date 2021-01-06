@@ -1,0 +1,170 @@
+#!/usr/bin/env python3.7
+
+import argparse
+import subprocess as sp
+from os import remove
+from os.path import dirname, split, join
+from sys import stdin, stdout, stderr
+
+# define the arguments of the compiler
+parser = argparse.ArgumentParser(
+    description='PCLC - the PCL Somewhat Complete ( :( ) Compiler'
+)
+
+parser.add_argument('infile',
+    nargs='?', type=argparse.FileType('r'),
+    help='(if -f or -i not given) the PCL source code to compile'
+)
+parser.add_argument('-O',
+    help='optimize IR and final (assembly) code',
+    action='store_true',
+    dest='optimize'
+)
+parser.add_argument('-x', '--no-dump',
+    help='do not emit IR and assembly code in two seperate files (switched on by default)',
+    action='store_false',
+    dest='store_IR_and_final'
+)
+parser.add_argument('-i',
+    help='read source code from stdin, print IR code to stdout, then exit (no executable is produced)',
+    action='store_true',
+    dest='dump_IR'
+)
+parser.add_argument('-f',
+    help='read source code from stdin, print final code to stdout, then exit (no executable is produced)',
+    action='store_true',
+    dest='dump_final'
+)
+parser.add_argument('-o',
+    help='(if -f or -i not given) the name of the produced executable (default: a.out)',
+    default='a.out',
+    dest='outname'
+)
+
+args = parser.parse_args()
+
+dump_IR_or_final = args.dump_IR or args.dump_final
+
+# check that the input comes from a single source (either a file or stdin)
+if dump_IR_or_final and args.infile is not None:
+    parser.error('using the -i or the -f flag and providing an infile name are conflicting')
+
+# check that we actually have something to do :)
+if not dump_IR_or_final and args.infile is None:
+    parser.error('either one of the -i and -f flags or an infile name must be given')
+
+# check that only one of the -i and -f flags are given
+if args.dump_IR and args.dump_final:
+    parser.error('the -i and -f flags are mutually exlusive')
+
+# a friendly reminder
+if dump_IR_or_final and args.outname != 'a.out':
+    parser.error('usage of the -o flag along with the -i or the -f flag is meaningless')
+
+# define program name
+if args.infile is not None:
+    basedir, progname = split(args.infile.name)
+    progname = progname if progname.split('.')[-1] != 'pcl' else progname.split('.pcl')[0]
+else:
+    basedir = ''
+    progname = 'pcl_from_stdin'
+
+objname = progname + '.o'
+
+# define some command line utilities needed to compile PCL programs
+pclcdir = dirname(__file__)
+pcl_libraries = join(pclcdir, 'lib/lib.a')
+ir_compiler = join(pclcdir, 'bin/pcl')
+final_compiler = 'llc'
+final_compiler_flags = ['-filetype=obj', f'-o={objname}']
+optimizer = 'opt'
+# inlining opt pass replicates code a lot, but that's ok for PCL :/
+# optimizer_flags = ['-O3', '-S', '-disable-inlining']
+optimizer_flags = ['-O3', '-S']
+linker = 'clang'
+linker_flags = [objname, pcl_libraries, '-o', args.outname]
+
+if args.dump_IR or args.dump_final:
+    initial_input = stdin
+else:
+    initial_input = args.infile
+
+### compile ###
+# step 1: source code to LLVM IR
+ir_code_proc = sp.run(
+    [ir_compiler, progname],
+    stdin=initial_input, stdout=sp.PIPE
+)
+
+if ir_code_proc.returncode != 0:
+    exit(-1)
+
+ir_code = ir_code_proc.stdout
+
+# step 2: optimize LLVM IR
+if args.optimize:
+    ir_opt = sp.run(
+        [optimizer, *optimizer_flags],
+        stdout=sp.PIPE, stderr=sp.PIPE,
+        input=ir_code
+    )
+    
+    if ir_opt.stderr:
+        stderr.write(ir_opt.stderr.decode('ascii'))
+        exit(-1)
+    ir_code = ir_opt.stdout
+
+# step 2.5: store IR in a file or dump it if requested
+if args.store_IR_and_final:
+    with open(join(basedir, progname + '.imm'), 'w') as f:
+        f.write(ir_code.decode('ascii'))
+
+if args.dump_IR:
+    print(ir_code.decode('ascii'))
+    exit(0)
+
+# step 3: LLVM IR to assembly, with optimization if requested
+final_compile_cmd = [final_compiler, *final_compiler_flags]
+if args.optimize:
+    final_compile_cmd.append('-O3')
+else:
+    final_compile_cmd.append('-O0')
+
+final_compile = sp.run(
+    final_compile_cmd,
+    stdout=sp.PIPE, stderr=sp.PIPE,
+    input=ir_code
+)
+
+if final_compile.stderr:
+    stderr.write(final_compile.stderr.decode('ascii'))
+    exit(-1)
+
+# step 3.5: store assembly in a file or dump it if requested
+if args.store_IR_and_final or args.dump_final:
+    final_compile_cmd = [final_compiler]
+    if args.optimize:
+        final_compile_cmd.append('-O3')
+    else:
+        final_compile_cmd.append('-O0')
+
+if args.store_IR_and_final:
+    with open(join(basedir, progname + '.asm'), 'w') as f:
+        sp.run(final_compile_cmd, stdout=f, stderr=sp.PIPE, input=ir_code)
+
+if args.dump_final:
+    sp.run(final_compile_cmd, stdout=stdout, stderr=stderr, input=ir_code)
+    remove(objname)
+    exit(0)
+
+# step 4: link and create executable
+linking = sp.run(
+    [linker, *linker_flags],
+    stdout=sp.PIPE, stderr=sp.PIPE,
+)
+
+if linking.stderr:
+    stderr.write(linking.stderr)
+    exit(-1)
+
+remove(objname)
