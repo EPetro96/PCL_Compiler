@@ -57,11 +57,11 @@ public:
     // Initialize the module and the optimization passes.
     TheModule = make_unique<Module>("pcl program", TheContext);
     TheFPM = make_unique<legacy::FunctionPassManager>(TheModule.get());
-    TheFPM->add(createPromoteMemoryToRegisterPass());
-    TheFPM->add(createInstructionCombiningPass());
-    TheFPM->add(createReassociatePass());
-    TheFPM->add(createGVNPass());
-    TheFPM->add(createCFGSimplificationPass());
+    // TheFPM->add(createPromoteMemoryToRegisterPass());
+    // TheFPM->add(createInstructionCombiningPass());
+    // TheFPM->add(createReassociatePass());
+    // TheFPM->add(createGVNPass());
+    // TheFPM->add(createCFGSimplificationPass());
     TheFPM->doInitialization();
 
     /***********declare lib functions***********/
