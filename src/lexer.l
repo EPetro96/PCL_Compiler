@@ -16,8 +16,9 @@
 C [A-Z]
 P [a-z]
 D [0-9]
-W ["\n" "\t" "\r" "\0" "\\" "\'" "\""]
+W "\\n"|"\\t"|"\\r"|"\\0"|"\\\\"|"\\\'"|"\\\""
 PRINTABLE [^["'\]]
+S [^" ^' ^\ ^"\n"]
 
 %%
 
@@ -61,9 +62,7 @@ PRINTABLE [^["'\]]
 
 \'({W}|{PRINTABLE})\'	{yylval.ch = strdup(yytext); return T_constchar; }
 
-\"{PRINTABLE}+([\n]?)\"	{yylval.str = strdup(yytext); return T_string; }
-
-\"({W}[^[\n]])+([\n]?)\"	{yylval.str = strdup(yytext); return T_string; }
+\"(\\.|[^\\"^\n])*\"	{ yylval.str = escapeString(yytext); return T_string; }
 
 
 "="			{ yylval.op = strdup(yytext); return T_eq; }

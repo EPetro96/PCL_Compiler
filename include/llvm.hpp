@@ -47,6 +47,7 @@ typedef struct {
     unordered_map<string, llvm::Type*> FuncTypes;
     unordered_map<string, llvm::AllocaInst*> variableAllocas;
     unordered_map<string, llvm::Function*> functions;
+    unordered_map<string, llvm::BasicBlock*> functions_ends;
     unordered_map<string, llvm::Function*> procedures;
     unordered_map<string, llvm::Value*> FunctionsResults;
     unordered_map<string, llvm::BasicBlock*> labelsbody;
@@ -144,6 +145,21 @@ public:
         this->scopeLogs.back().FuncTypes[fname] = t;
     };
 
+    // add end of func
+    void storeEndOfFunc(string fname, llvm::BasicBlock *b){
+        this->scopeLogs.back().functions_ends[fname] = b;
+    };
+
+    // get end of func
+    llvm::BasicBlock * getEndOfFunc(string fname){
+        for (auto it = this->scopeLogs.rbegin(); it != this->scopeLogs.rend(); ++it) {
+            if (!(it->functions_ends.find(fname) == it->functions_ends.end()))
+                return it->functions_ends[fname];
+        }
+        std::cerr << "ERROR: Func "<< fname << " encounterd a problem\n";
+        return nullptr;
+    }
+
     // get function's type
     llvm::Type * getFuncType(string fname){
         for (auto it = this->scopeLogs.rbegin(); it != this->scopeLogs.rend(); ++it) {
@@ -163,6 +179,7 @@ public:
         }
         // if sem was ok, this point should be unreachable
         std::cerr << "Func " << fname << " not in scope.\n";
+        exit(1);
         return nullptr;
     };
 
@@ -200,6 +217,7 @@ public:
         }
         // if sem was ok, this point should be unreachable
         std::cerr << "Proc " << pname << " not in scope.\n";
+        exit(1);
         return nullptr;
     };
 
@@ -220,6 +238,7 @@ public:
         }
         // if sem was ok, this point should be unreachable
         std::cerr << "Variable " << id << " not in scope.\n";
+        exit(1);
         return nullptr;
     };
 
@@ -231,6 +250,7 @@ public:
         }
         // if sem was ok, this point should be unreachable
         std::cerr << "Array " << id << " not in scope.\n";
+        exit(1);
         return nullptr;
     };
 
@@ -242,6 +262,7 @@ public:
         }
         // if sem was ok, this point should be unreachable
         std::cerr << "Pointer " << id << " not in scope(from getPoinType).\n";
+        exit(1);
         return nullptr;
     };
 
@@ -253,6 +274,7 @@ public:
         }
         // if sem was ok, this point should be unreachable
         std::cerr << "Variable's allocation " << id << " not in scope.\n";
+        exit(1);
         return nullptr;
     };
 
@@ -264,6 +286,7 @@ public:
         }
         // if sem was ok, this point should be unreachable
         std::cerr << "Label " << id << " not in scope.\n";
+        exit(1);
         return nullptr;
     };
 
@@ -275,6 +298,7 @@ public:
         }
         // if sem was ok, this point should be unreachable
         std::cerr << "Label " << id << " not in scope.\n";
+        exit(1);
         return nullptr;
     };
 
@@ -284,9 +308,11 @@ public:
             if (!(it->variableTypes.find(id) == it->variableTypes.end()))
                 return it->variableTypes[id]->isPointerTy();
         }
-        // if sem was ok, this point should be unreachable
-        std::cerr << "Pointer " << id << " not in scope.(from isPointer)\n";
         return false;
+        // if sem was ok, this point should be unreachable
+        std::cerr << "Pointer to " << id << " not in scope.(from isPointer)\n";
+        exit(1);
+        
     };
 
     // add function to scopelog
@@ -307,6 +333,7 @@ public:
         }
         // if sem was ok, this point should be unreachable
         std::cerr << "Function " << id << " not in scope.\n";
+        exit(1);
         return nullptr;
     };
 
@@ -317,7 +344,8 @@ public:
                 return it->procedures[id];
         }
         // if sem was ok, this point should be unreachable
-        std::cerr << "Function " << id << " not in scope.\n";
+        std::cerr << "Procedure " << id << " not in scope.\n";
+        exit(1);
         return nullptr;
     };
 

@@ -42,7 +42,7 @@ Type *AST::i1 = IntegerType::get(TheContext, 1);
 Type *AST::i8 = IntegerType::get(TheContext, 8);
 Type *AST::i32 = IntegerType::get(TheContext, 32);
 Type *AST::i64 = IntegerType::get(TheContext, 64);
-Type *AST::DoubleTyID = IntegerType::getDoubleTy(TheContext);
+Type *AST::X86_FP80TyID = IntegerType::getX86_FP80Ty(TheContext);
 
 
 %}
@@ -112,9 +112,13 @@ Type *AST::DoubleTyID = IntegerType::getDoubleTy(TheContext);
 %token<str> T_string
 %token<var> T_id
 
-%left<op> "+" "-" "="
-%left<op> "*" "div" "mod" "or"
-%left<op> "(" ")" "[" "]" "<=" ">=" "<" ">" "<>" "and" "/" "not"
+%left<op> "or"
+%left<op> "and"
+%left<op> "not"
+%left<op> "=" "<>" "<=" ">=" "<" ">"
+%left<op> "+" "-"
+%left<op> "*" "/" "div" "mod"
+%left<op> "(" ")" "[" "]"
 %right<op> "@" "^"
 
 %expect 1
@@ -167,6 +171,7 @@ Type *AST::DoubleTyID = IntegerType::getDoubleTy(TheContext);
 program:
 	"program" T_id ";" body "." { 
 		st.openScope();
+		st.insertMain();
 		Library *lib = new Library();
 		lib->init();
         //$4->printOn(std::cout);	// this was used only for debugging

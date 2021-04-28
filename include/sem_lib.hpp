@@ -24,7 +24,7 @@ public:
 		//writeInteger (n: integer)
 		formal_list = new Formal_list();
 		idlist = new Id_list();
-		i = "n";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 		type = new Int();
 		f = new Formal(idlist, type);
@@ -39,7 +39,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "b";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Bool();
@@ -51,7 +51,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "c";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 		type = new Char();
 		f = new Formal(idlist, type);
@@ -62,7 +62,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "r";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Real();
@@ -75,7 +75,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "s";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Array(TYPE_char);
@@ -108,7 +108,7 @@ public:
 		idlist = new Id_list();
 		
 		
-		i = "size";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Int();
@@ -118,7 +118,7 @@ public:
 		idlist = new Id_list();
 		
 		
-		l = "s";
+		l = "dummy4207210396";
 		idlist->append_char(l);
 
 		type = new Array(TYPE_char);
@@ -134,7 +134,7 @@ public:
 		idlist = new Id_list();
 		
 		
-		i = "n";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Int();
@@ -147,7 +147,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "r";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Real();
@@ -160,7 +160,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "r";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Real();
@@ -173,7 +173,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "r";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 		type = new Real();
 		f = new Formal(idlist, type);
@@ -185,7 +185,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "r";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Real();
@@ -198,7 +198,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "r";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Real();
@@ -211,7 +211,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "r";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Real();
@@ -224,7 +224,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "r";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Real();
@@ -237,7 +237,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "r";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Real();
@@ -255,7 +255,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "r";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Real();
@@ -268,7 +268,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "r";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Real();
@@ -281,7 +281,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "c";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Char();
@@ -294,7 +294,7 @@ public:
 		formal_list = new Formal_list();
 		idlist = new Id_list();
 		
-		i = "n";
+		i = "dummy4207210396";
 		idlist->append_char(i);
 
 		type = new Int();

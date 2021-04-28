@@ -3,7 +3,9 @@
 #include <cstdlib>
 #include <vector>
 #include <map>
+#include <algorithm>
 #include "ast.hpp"
+#include "general.hpp"
 
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LegacyPassManager.h>
@@ -16,7 +18,8 @@
 
 using namespace llvm;
 
-enum Types { TYPE_int, TYPE_bool, TYPE_char, TYPE_real, TYPE_string, TYPE_array, TYPE_pointer, TYPE_proc, TYPE_result, TYPE_nil, TYPE_label };
+enum Types { TYPE_int, TYPE_bool, TYPE_char, TYPE_real, TYPE_string, TYPE_array, TYPE_pointer, TYPE_proc, TYPE_func, TYPE_result, TYPE_nil, TYPE_label, TYPE_error };
+
 
 struct SymbolEntry {
   Types type;
@@ -45,6 +48,10 @@ public:
     if (locals.find(c) == locals.end()) return nullptr;
     return &(locals[c]);
   }
+  Types lookup_type(std::string c) {
+    SymbolEntry *se = lookup(c);
+    return se->type;
+  }
   void insert(std::string c, Types t) {
     if (locals.find(c) != locals.end()) {
       std::cerr << "Duplicate variable " << c << std::endl;
@@ -52,6 +59,21 @@ public:
     }
     locals[c] = SymbolEntry(t, offset++);
     ++size;
+    pointers[c] = false;
+    procs[c] = false;
+    procformals[c] = nullptr;
+    funcs[c] = false;
+    funcformals[c] = nullptr;
+    labels[c] = false;
+  }
+  void insertpointer(std::string c, Types t) {
+    if (locals.find(c) != locals.end()) {
+      std::cerr << "Duplicate variable " << c << std::endl;
+      exit(1);
+    }
+    locals[c] = SymbolEntry(t, offset++);
+    ++size;
+    pointers[c] = true;
     procs[c] = false;
     procformals[c] = nullptr;
     funcs[c] = false;
@@ -65,6 +87,7 @@ public:
     }
     locals[c] = SymbolEntry(t, offset++, v);
     ++size;
+    pointers[c] = false;
     procs[c] = false;
     procformals[c] = nullptr;
     funcs[c] = false;
@@ -73,11 +96,12 @@ public:
   }
   void insert(std::string c, Function *v) {
     if (locals.find(c) != locals.end()) {
-      std::cerr << "Duplicate variable " << c << std::endl;
+      std::cerr << "Duplicate Function " << c << std::endl;
       exit(1);
     }
     locals[c] = SymbolEntry(offset++, v);
     ++size;
+    pointers[c] = false;
     procs[c] = false;
     procformals[c] = nullptr;
     funcs[c] = true;
@@ -91,6 +115,7 @@ public:
     }
     locals[c] = SymbolEntry(t, offset++, v);
     ++size;
+    pointers[c] = false;
     procs[c] = false;
     procformals[c] = nullptr;
     funcs[c] = false;
@@ -103,26 +128,42 @@ public:
   }
   void insertLabel(std::string c, Types t){
   	if (locals.find(c) != locals.end()) {
-      std::cerr << "Duplicate variable " << c << std::endl;
+      std::cerr << "Duplicate Label " << c << std::endl;
       exit(1);
     }
     locals[c] = SymbolEntry(t, offset++);
     ++size;
+    pointers[c] = false;
     procs[c] = false;
     procformals[c] = nullptr;
     funcs[c] = false;
     funcformals[c] = nullptr;
     labels[c] = true;
   }
+  void insertArrayType(std::string c, Types t){
+    if (locals.find(c) == locals.end()) {
+      std::cerr << "Array " << c << "could not be found in scope" << std::endl;
+      exit(1);
+    }
+    pointers[c] = false;
+    arrays[c] = t;
+    procs[c] = false;
+    procformals[c] = nullptr;
+    funcs[c] = false;
+    funcformals[c] = nullptr;
+    labels[c] = false;
+  }
   void insertProcedure(std::string c, Types t, Formal_list *f, bool forward){
   	if (locals.find(c) != locals.end()) {
-      std::cerr << "Duplicate variable " << c << std::endl;
+      std::cerr << "Duplicate Procedure " << c << std::endl;
       exit(1);
     }
     locals[c] = SymbolEntry(t, offset++);
     ++size;
+    pointers[c] = false;
     procs[c] = true;
     procformals[c] = f;
+    procformalsdone[c] = false;
     funcs[c] = false;
     funcformals[c] = nullptr;
     labels[c] = false;
@@ -132,17 +173,30 @@ public:
   void insertParent(std::string c){
   	queue.push_back(c);
   }
+  void insertMain(){
+    std::string c = "main";
+    procs[c] = false;
+    pointers[c] = false;
+    procformals[c] = nullptr;
+    funcs[c] = false;
+    funcformals[c] = nullptr;
+    labels[c] = false;
+    Center_Forwards[c] = false;
+    queue.push_back(c);
+  }
   void insertFunction(std::string c, Types t, Formal_list *f, bool forward){
   	if (locals.find(c) != locals.end()) {
-      std::cerr << "Duplicate variable " << c << std::endl;
+      std::cerr << "Duplicate Function " << c << std::endl;
       exit(1);
     }
     locals[c] = SymbolEntry(t, offset++);
     ++size;
+    pointers[c] = false;
     procs[c] = false;
     procformals[c] = nullptr;
     funcs[c] = true;
     funcformals[c] = f;
+    funcformalsdone[c] = false;
     labels[c] = false;
     Center_Forwards[c] = forward;
     queue.push_back(c);
@@ -164,7 +218,7 @@ public:
   	if (Center_Forwards.find(c) == Center_Forwards.end()){
   		return false;
   	}
-  	return true;
+  	return Center_Forwards.at(c);
   }
   bool foundProc(std::string c){
   	return procs[c];
@@ -193,6 +247,9 @@ public:
   Formal_list *getFormalsProcedure(std::string c){
   	return procformals[c];
   }
+  Types getArrayType(std::string c){
+    return arrays[c];
+  }
   void insertLabelStmt(std::string c, Stmt *s){
     labelStmt[c] = s;
   }
@@ -200,12 +257,31 @@ public:
     if (labelStmt.find(c) == labelStmt.end()) return false;
     return true;
   }
+  bool formalsFuncDone(std::string c){
+    return funcformalsdone[c];
+  }
+  bool formalsProcDone(std::string c){
+    return procformalsdone[c];
+  }
+  void setformalsFuncDone(std::string c){
+    funcformalsdone[c] = true;
+  }
+  void setformalsProcDone(std::string c){
+    procformalsdone[c] = true;
+  }
+  bool ispointer(std::string c){
+    return pointers[c];
+  }
 private:
   std::map<std::string, SymbolEntry> locals;
+  std::map<std::string, bool> pointers;
+  std::map<std::string, Types> arrays;
   std::map<std::string, bool> procs;
   std::map<std::string, Formal_list *> procformals;
+  std::map<std::string, bool> procformalsdone;
   std::map<std::string, bool> funcs;
   std::map<std::string, Formal_list *> funcformals;
+  std::map<std::string, bool> funcformalsdone;
   std::map<std::string, bool> labels;
   std::map<std::string, Stmt *> labelsStmts;
   std::map<std::string, bool> Center_Forwards;
@@ -219,10 +295,16 @@ private:
 class SymbolTable {
 public:
   void openScope() {
+    // std::cout << "(OpenScope): Hey number of scopes on our programme is " << scopes.size() << "\n";
     int ofs = scopes.empty() ? 0 : scopes.back().getOffset();
     scopes.push_back(Scope(ofs));
+    // std::cout << "(OpenScope): Hey number of scopes now on our programme is " << scopes.size() << "\n";
   }
-  void closeScope() { scopes.pop_back(); };
+  void closeScope() {
+    // std::cout << "(CloseScope): Hey number of scopes on our programme is " << scopes.size() << "\n";
+    scopes.pop_back(); 
+    // std::cout << "(CloseScope): Hey number of scopes now on our programme is " << scopes.size() << "\n";
+  }
   SymbolEntry *lookup(std::string c) {
     SymbolEntry *e;
     for (auto i = scopes.rbegin(); i != scopes.rend(); ++i) {
@@ -231,6 +313,10 @@ public:
     }
     std::cerr << "Unknown variable " << c << std::endl;
     exit(1);
+  }
+  Types lookup_type(std::string c) {
+    SymbolEntry *se = lookup(c);
+    return se->type;
   }
   int getSizeOfCurrentScope() const { return scopes.back().getSize(); }
   void insert(std::string c, Types t) { scopes.back().insert(c, t); }
@@ -261,20 +347,36 @@ public:
   	}
   	return nullptr;
   }
+  Types getArrayType(std::string c){
+    return scopes.back().getArrayType(c);
+  }
   void insertLabel(std::string c, Types t){
   	scopes.back().insertLabel(c,t);
   }
+  void insertPointer(std::string c, Types t){
+    scopes.back().insertpointer(c,t);
+  }
+  void insert_array_type(std::string c, Types t){
+    scopes.back().insertArrayType(c,t);
+  }
   void insertLabelStmt(std::string c, Stmt *s){
     scopes.back().insertLabelStmt(c, s);
+  }
+  void insertMain(){
+    scopes.back().insertMain();
   }
   void insertProcedure(std::string c, Types t, Formal_list *f, bool forward){
   	scopes.back().insertProcedure(c, t, f, forward);
   }
   void insertFunction(std::string c, Types t, Formal_list *f, bool forward){
+    function_Types[c] = t;
   	scopes.back().insertFunction(c, t, f, forward);
   }
   void insertForwardDecl(std::string c, Types t){
   	scopes.back().insertForwardDecl(c, t);
+  }
+  Types getFunctionType(std::string c){
+    return function_Types[c];
   }
   void makeNew(std::string c){
   	scopes.back().makeNew(c);
@@ -289,7 +391,7 @@ public:
   			return;
   		}
   	}
-  	std::cerr << c << "is not in a known scope!\n";
+  	std::cerr << c << " is not in a known scope!\n";
   	exit(1);
   	return;
   }
@@ -336,8 +438,24 @@ public:
   bool LabelHasStmt(std::string s){
     return scopes.back().LabelHasStmt(s);
   }
+  bool formalsFuncDone(std::string c){
+    return scopes.back().formalsFuncDone(c);
+  }
+  bool formalsProcDone(std::string c){
+    return scopes.back().formalsProcDone(c);
+  }
+  void setformalsFuncDone(std::string c){
+    scopes.back().setformalsFuncDone(c);
+  }
+  void setformalsProcDone(std::string c){
+    scopes.back().setformalsProcDone(c);
+  }
+  bool ispointer(std::string c){
+    return scopes.back().ispointer(c);
+  }
 private:
   std::vector<Scope> scopes;
+  std::map<std::string, Types> function_Types;
 };
 
 extern SymbolTable st;

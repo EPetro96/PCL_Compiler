@@ -8,7 +8,7 @@ BINDIR=bin
 INC=-I./$(INCDIR)
 INSTALLDIR=/usr/local/bin
 
-CXX=g++
+ptions=g++
 CXXFLAGS=-Wall -std=c++11 `llvm-config --cxxflags` $(INC)
 CFLAGS=-w $(INC)
 LDFLAGS=`llvm-config --ldflags --system-libs --libs all`
@@ -32,7 +32,7 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.cpp
 	mkdir -p $(BUILDDIR)
 	$(CXX) $(CXXFLAGS) -o $@ -c $<	
 
-$(BINDIR)/pcl: $(BUILDDIR)/lexer.o $(BUILDDIR)/parser.o
+$(BINDIR)/pcl: $(BUILDDIR)/lexer.o $(BUILDDIR)/parser.o $(BUILDDIR)/general.o
 	mkdir -p $(BINDIR)
 	$(CXX) $(CXXFLAGS) -o $(BINDIR)/pcl $^ $(LDFLAGS)
 

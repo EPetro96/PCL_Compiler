@@ -8,6 +8,7 @@
 #include "symbol.hpp"
 #include "lexer.hpp"
 #include "llvm.hpp"
+#include "general.hpp"
 
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LegacyPassManager.h>
@@ -21,6 +22,7 @@
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Scalar/GVN.h>
 #include <llvm/Transforms/Utils.h>
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include <llvm/Transforms/Utils/PromoteMemToReg.h>
 #include <llvm/Transforms/InstCombine/InstCombine.h>
 
@@ -39,8 +41,10 @@ inline std::ostream& operator<<(std::ostream &out, Types t) {
   case TYPE_pointer: out << "pointer"; break;
   case TYPE_result: out << "result"; break;
   case TYPE_proc: out << "procedure"; break;
+  case TYPE_func: out << "function"; break;
   case TYPE_nil: out << "nil"; break;
   case TYPE_label: out << "label"; break;
+  case TYPE_error: out << "error"; break;
   }
   return out;
 }
@@ -73,17 +77,17 @@ public:
     TheWriteInteger =
       Function::Create(writeInteger_type, Function::ExternalLinkage,
                        "writeInteger", TheModule.get());
-    // declare void @writeReal(DoubleTyID)
+    // declare void @writeReal(X86_FP80TyID)
     FunctionType *writeReal_type =
       FunctionType::get(Type::getVoidTy(TheContext),
-                std::vector<Type *> { DoubleTyID }, false);
+                std::vector<Type *> { X86_FP80TyID }, false);
     TheWriteReal =
       Function::Create(writeReal_type, Function::ExternalLinkage,
                 "writeReal", TheModule.get());
     // declare void @writeBoolean(i1)
     FunctionType *writeBoolean_type =
       FunctionType::get(Type::getVoidTy(TheContext),
-                        std::vector<Type *> { i32 }, false);
+                        std::vector<Type *> { i1 }, false);
     TheWriteBoolean =
       Function::Create(writeBoolean_type, Function::ExternalLinkage,
                        "writeBoolean", TheModule.get());
@@ -135,53 +139,53 @@ public:
                        "abs", TheModule.get());
 
     FunctionType *math_real_type =
-      FunctionType::get(DoubleTyID,
-                        std::vector<Type *> { DoubleTyID }, false);
-    //declare DoubleTyID @fabs(DoubleTyID)
+      FunctionType::get(X86_FP80TyID,
+                        std::vector<Type *> { X86_FP80TyID }, false);
+    //declare X86_FP80TyID @fabs(X86_FP80TyID)
     TheFabs =
       Function::Create(math_real_type, Function::ExternalLinkage,
                        "fabs", TheModule.get());
-    //declare DoubleTyID @sqrt(DoubleTyID)
+    //declare X86_FP80TyID @sqrt(X86_FP80TyID)
     TheSqrt =
       Function::Create(math_real_type, Function::ExternalLinkage,
                        "sqrt", TheModule.get());
-    //declare DoubleTyID @sin(DoubleTyID)
+    //declare X86_FP80TyID @sin(X86_FP80TyID)
     TheSin =
       Function::Create(math_real_type, Function::ExternalLinkage,
                        "sin", TheModule.get());
-    //declare DoubleTyID @cos(DoubleTyID)
+    //declare X86_FP80TyID @cos(X86_FP80TyID)
     TheCos =
       Function::Create(math_real_type, Function::ExternalLinkage,
                        "cos", TheModule.get());
-    //declare DoubleTyID @tan(DoubleTyID)
+    //declare X86_FP80TyID @tan(X86_FP80TyID)
     TheTan =
       Function::Create(math_real_type, Function::ExternalLinkage,
                        "tan", TheModule.get());
-    //declare DoubleTyID @atan(DoubleTyID)
+    //declare X86_FP80TyID @atan(X86_FP80TyID)
     TheArctan =
       Function::Create(math_real_type, Function::ExternalLinkage,
                        "atan", TheModule.get());
-    //declare DoubleTyID @exp(DoubleTyID)
+    //declare X86_FP80TyID @exp(X86_FP80TyID)
     TheExp =
       Function::Create(math_real_type, Function::ExternalLinkage,
                        "exp", TheModule.get());
-    //declare DoubleTyID @ln(DoubleTyID)
+    //declare X86_FP80TyID @ln(X86_FP80TyID)
     TheLn =
       Function::Create(math_real_type, Function::ExternalLinkage,
                        "ln", TheModule.get());
-    //declare DoubleTyID @pi()
+    //declare X86_FP80TyID @pi()
     FunctionType *pi_type =
-        FunctionType::get(DoubleTyID, std::vector<llvm::Type *>{}, false);
+        FunctionType::get(X86_FP80TyID, std::vector<llvm::Type *>{}, false);
     ThePi =
       Function::Create(pi_type, Function::ExternalLinkage,
                        "pi", TheModule.get());
     FunctionType *conv_type =
-    	FunctionType::get(i32, std::vector<llvm::Type *> { DoubleTyID }, false);
-    //declare i32 @trunc(DoubleTyID)
+    	FunctionType::get(i32, std::vector<llvm::Type *> { X86_FP80TyID }, false);
+    //declare i32 @trunc(X86_FP80TyID)
     TheTrunc =
       Function::Create(conv_type, Function::ExternalLinkage,
       	               "trunc", TheModule.get());
-    //declare i32 @round(DoubleTyID)
+    //declare i32 @round(X86_FP80TyID)
     TheRound =
       Function::Create(conv_type, Function::ExternalLinkage,
       	               "round", TheModule.get());
@@ -253,7 +257,7 @@ protected:
   static Type *i8;
   static Type *i32;
   static Type *i64;
-  static Type *DoubleTyID;
+  static Type *X86_FP80TyID;
 
   // Useful LLVM helper functions.
   ConstantInt* c1(char c) const {
@@ -265,7 +269,7 @@ protected:
   ConstantInt* c32(int n) const {
     return ConstantInt::get(TheContext, APInt(32, n, true));
   }
-  ConstantFP* fp32(double d) const {
+  ConstantFP* fp32(float d) const {
     return ConstantFP::get(TheContext, APFloat(d));
   }
   // calculate variable address
@@ -323,8 +327,11 @@ protected:
              id == "ord" or id == "chr";
   }
   // function that translates symbol table types to llvm types
-  virtual Type *type_to_llvm(Types type, std::string pm = "PASS_BY_VALUE") const {
+  virtual Type *type_to_llvm(Types type, std::string pm = "PASS_BY_VALUE", bool array = false) const {
     llvm::Type *llvmtype;
+    if (array){
+      llvmtype = llvm::ArrayType::get(type_to_llvm(type), 5);
+    }
     switch (type) {
       case TYPE_bool:
         llvmtype = i1;
@@ -335,9 +342,16 @@ protected:
       case TYPE_char:
         llvmtype = i8;
         break;
-      default: std::cerr << "cannot cast semantic type to LLVM type";
+      case TYPE_real:
+      	llvmtype = X86_FP80TyID;
+      	break;
+      case TYPE_array:
+      	break;
+      default: {std::cerr << "ERROR: Could not cast semantic type to LLVM type\n"; exit(1); }
     }
-    if (pm.compare("PASS_BY_REFERENCE") == 0) return llvmtype->getPointerTo();
+    if (pm.compare("PASS_BY_REFERENCE") == 0) {
+      return llvmtype->getPointerTo();
+    }
     return llvmtype;
   }
   // dereferencing function
@@ -354,7 +368,7 @@ public:
     out << "Type()";
   }
   virtual bool operator==(const Type_not_from_llvm &that) const { return false; }
-  virtual Types get_type() const {
+  virtual Types get_type()  {
     return value;
   }
   virtual Types get_oftype() const {
@@ -374,7 +388,7 @@ public:
   Int(){
     value = TYPE_int;
   }
-  virtual Types get_type() const{
+  virtual Types get_type() override{
     return value;
   }
 private:
@@ -386,7 +400,7 @@ public:
   Real(){
     value = TYPE_real;
   }
-  virtual Types get_type() const{
+  virtual Types get_type() override{
     return value;
   }
 private:
@@ -398,7 +412,7 @@ public:
   Char(){
     value = TYPE_char;
   }
-  virtual Types get_type() const{
+  virtual Types get_type() override{
     return value;
   }
 private:
@@ -410,7 +424,7 @@ public:
   Bool(){
     value = TYPE_bool;
   }
-  virtual Types get_type() const{
+  virtual Types get_type() override{
     return value;
   }
 private:
@@ -449,7 +463,7 @@ public:
     }
     return false;
   }
-  virtual Types get_type() const{
+  virtual Types get_type() override{
   	return TYPE_array;
   }
   virtual int get_size() const {
@@ -492,7 +506,7 @@ public:
     }
     return false;
   }
-  virtual Types get_type() const{
+  virtual Types get_type() override{
   	return TYPE_pointer;
   }
   virtual Types get_oftype() const{
@@ -559,7 +573,7 @@ private:
 class Expr: public AST {
 public:
   virtual int eval() const = 0;
-  bool type_check(Types t) {
+  virtual bool type_check(Types t) {
     //sem();
     if (type != t) {
       return 0;
@@ -571,7 +585,7 @@ public:
   virtual Types get_type(){
     return type;
   }
-  void set_type(Types t){
+  virtual void set_type(Types t) {
     type = t;
   }
   Pointer *get_pointer(){
@@ -586,13 +600,13 @@ public:
   void set_array(Array *arr){
     a = arr;
   }                         //                                       _ 0 _
-  bool isresult(){ //it doesnt work for assign if we have false here  \|/
-  	return false;
-  }
+  // bool isresult(){ //it doesnt work for assign if we have false here  \|/
+  // 	return false;
+  // }
   virtual bool isArElement() {
     return false;
   }
-  virtual std::string get_char_var(){ return 0; }
+  virtual std::string get_char_var(){ return "undefined variable/expression"; }
   virtual Value* get_offset() { return nullptr; }
   virtual Value* compile() const override { return nullptr;}
 private:
@@ -662,9 +676,9 @@ public:
   virtual int eval() const override {   //unreachable
     return -1;
   }
-  virtual bool isresult() {
-    return false;
-  }
+  // virtual bool isresult() {
+  //   //return false;
+  // }
 };
 
 class Result: public Lvalue {
@@ -692,13 +706,15 @@ public:
   virtual std::string get_char_var() override{
   	return "@";
   }
-  virtual Types get_type() const{
+  virtual Types get_type() override{
     return TYPE_result;
   }
-  virtual bool isresult() {
+  virtual void set_type(Types t) override {
+  	type = t;
+  }
+  virtual bool isresult(){
     return true;
   }
-  virtual void sem() override{ }
   virtual Value* compile() const override {
   	return nullptr;
   }
@@ -748,6 +764,18 @@ public:
       if (! strcmp(op,"and")) return left->eval() && right->eval();
       return 0;  // this will never be reached.
     }
+  virtual Types get_type() override {
+  	return t;
+  }
+  virtual bool type_check(Types t_given) override {
+    //sem();
+    if (t != t_given) {
+      return 0;
+    }
+    else {
+      return 1;
+    }
+  }
   virtual void sem() override {
       left->sem();
       right->sem();
@@ -761,87 +789,161 @@ public:
       }
 
       if ((! strcmp(op,"+")) || (!strcmp(op,"-")) || (!strcmp(op,"*"))){ //make sure both operands have the same "number type" 
-        if (left->type_check(TYPE_int) && right->type_check(TYPE_int)){
-          type = new Int();
+      	std::string l_s = left->get_char_var();
+        std::string r_s = right->get_char_var();
+      	if (st.foundFunc(l_s) || st.foundFunc(r_s)){
+      		std::cerr << "ERROR: Cannot perform arithmetic expressions on functions\n";
+      		exit(1);
+      	}
+      	if (st.foundProc(l_s) || st.foundProc(r_s)){
+      		std::cerr << "ERROR: Cannot perform arithmetic expressions on procedures\n";
+      		exit(1);
+      	}
+        if (left->get_type() == TYPE_int && right->get_type() == TYPE_int){
+            t = TYPE_int;
+            type = new Int();
         }
-          else if (left->type_check(TYPE_real) && right->type_check(TYPE_real)){
-            type = new Real();
-          }
-          else if (left->type_check(TYPE_int) && right->type_check(TYPE_real)){
-            type = new Real();
-          }
-          else if (left->type_check(TYPE_real) && right->type_check(TYPE_int)){
-            type = new Real();
-          }
-          else {
-            std::cerr << "Type mismatch for BinOp " << op << std::endl;
-          }
-        }
-        if (! strcmp(op,"/")) //make sure that left and right are numbers (ints or reals)
-        {
-          if (left->type_check(TYPE_int) && right->type_check(TYPE_int)){
+        else if (left->get_type() == TYPE_real && right->get_type() == TYPE_real){
+          t = TYPE_real;
           type = new Real();
         }
-          else if (left->type_check(TYPE_real) && right->type_check(TYPE_real)){
-            type = new Real();
-          }
-          else if (left->type_check(TYPE_int) && right->type_check(TYPE_real)){
-            type = new Real();
-          }
-          else if (left->type_check(TYPE_real) && right->type_check(TYPE_int)){
-            type = new Real();
-          }
-          else {
-            std::cerr << "Type mismatch for BinOp " << op << std::endl;
-          }
+        else if (left->get_type() == TYPE_int && right->get_type() == TYPE_real){
+          t = TYPE_real;
+          type = new Real();
         }
-        if ((! strcmp(op,"mod")) || (!strcmp(op,"div"))){
-          if (left->type_check(TYPE_int) && right->type_check(TYPE_int)){
+        else if (left->get_type() == TYPE_real && right->get_type() == TYPE_int){
+          t = TYPE_real;
+          type = new Real();
+        }
+        else {
+          std::cerr << "ERROR: Type mismatch for BinOp " << op << std::endl;
+          exit(1);
+        }
+      }
+      if (! strcmp(op,"/")) //make sure that left and right are numbers (ints or reals)
+      {
+      	std::string l_s = left->get_char_var();
+        std::string r_s = right->get_char_var();
+      	if (st.foundFunc(l_s) || st.foundFunc(r_s)){
+      		std::cerr << "ERROR: Cannot perform arithmetic expressions on functions\n";
+      		exit(1);
+      	}
+      	if (st.foundProc(l_s) || st.foundProc(r_s)){
+      		std::cerr << "ERROR: Cannot perform arithmetic expressions on procedures\n";
+      		exit(1);
+      	}
+        if (left->get_type() == TYPE_int && right->get_type() == TYPE_int){
+          t = TYPE_real;
+          type = new Real();
+        }
+        else if (left->get_type() == TYPE_real && right->get_type() == TYPE_real){
+          t = TYPE_real;
+          type = new Real();
+        }
+        else if (left->get_type() == TYPE_int && right->get_type() == TYPE_real){
+          t = TYPE_real;
+          type = new Real();
+        }
+        else if (left->get_type() == TYPE_real && right->get_type() == TYPE_int){
+          t = TYPE_real;
+          type = new Real();
+        }
+        else {
+          std::cerr << "ERROR: Type mismatch for BinOp " << op << std::endl;
+          exit(1);
+        }
+      }
+      if ((! strcmp(op,"mod")) || (!strcmp(op,"div"))){
+        if (left->get_type() == TYPE_int && right->get_type() == TYPE_int){
+          t = TYPE_int;
           type = new Int();
         }
         else {
-            std::cerr << "Type mismatch for BinOp " << op << std::endl;
+            std::cerr << "ERROR: Type mismatch for BinOp " << op << std::endl;
+            exit(1);
           }
-        }
+      }
       if ((! strcmp(op,"<")) || (!strcmp(op,">")) || (!strcmp(op,"<=")) || (!strcmp(op,">="))){ //both operands must be numbers
-          if (left->type_check(TYPE_int) && right->type_check(TYPE_int)){
+      	std::string l_s = left->get_char_var();
+        std::string r_s = right->get_char_var();
+      	if (st.foundFunc(l_s) || st.foundFunc(r_s)){
+      		std::cerr << "ERROR: Cannot perform boolean expressions on functions\n";
+      		exit(1);
+      	}
+      	if (st.foundProc(l_s) || st.foundProc(r_s)){
+      		std::cerr << "ERROR: Cannot perform boolean expressions on procedures\n";
+      		exit(1);
+      	}
+        if (left->get_type() == TYPE_int && right->get_type() == TYPE_int){
+          t = TYPE_bool;
           type = new Bool();
         }
-          else if (left->type_check(TYPE_real) && right->type_check(TYPE_real)){
-            type = new Bool();
-          }
-          else if (left->type_check(TYPE_int) && right->type_check(TYPE_real)){
-            type = new Bool();
-          }
-          else if (left->type_check(TYPE_real) && right->type_check(TYPE_int)){
-            type = new Bool();
-          }
-          else {
-            std::cerr << "Type mismatch for BinOp " << op << std::endl;
-          } 
+        else if (left->get_type() == TYPE_real && right->get_type() == TYPE_real){
+          t = TYPE_bool;
+          type = new Bool();
+        }
+        else if (left->get_type() == TYPE_int && right->get_type() == TYPE_real){
+          t = TYPE_bool;
+          type = new Bool();
+        }
+        else if (left->get_type() == TYPE_real && right->get_type() == TYPE_int){
+          t = TYPE_bool;
+          type = new Bool();
+        }
+        else {
+          std::cerr << "ERROR: Type mismatch for BinOp " << op << std::endl;
+          exit(1);
+        } 
       }
       if ((! strcmp(op,"=")) || (!strcmp(op,"<>"))){ //opernads must be both numbers or of the same type but not arrays
-        if (left->type_check(TYPE_int) && right->type_check(TYPE_int)){
+      	std::string l_s = left->get_char_var();
+        std::string r_s = right->get_char_var();
+      	if (st.foundFunc(l_s) || st.foundFunc(r_s)){
+      		std::cerr << "ERROR: Cannot perform boolean expressions on functions\n";
+      		exit(1);
+      	}
+      	if (st.foundProc(l_s) || st.foundProc(r_s)){
+      		std::cerr << "ERROR: Cannot perform boolean expressions on procedures\n";
+      		exit(1);
+      	}
+        if (left->get_type() == TYPE_int && right->get_type() == TYPE_int){
+          t = TYPE_bool;
           type = new Bool();
         }
-          else if (left->type_check(TYPE_real) && right->type_check(TYPE_real)){
-            type = new Bool();
-          }
-          else if (left->type_check(TYPE_int) && right->type_check(TYPE_real)){
-            type = new Bool();
-          }
-          else if (left->type_check(TYPE_real) && right->type_check(TYPE_int)){
-            type = new Bool();
-          }
-          else if ((left->get_type() == right->get_type()) && (left->get_type() != TYPE_array)){
-            type = new Bool();
-          }
-          else {
-            std::cerr << "Type mismatch for BinOp " << op << std::endl;
-          }
+        else if (left->get_type() == TYPE_real && right->get_type() == TYPE_real){
+          t = TYPE_bool;
+          type = new Bool();
+        }
+        else if (left->get_type() == TYPE_int && right->get_type() == TYPE_real){
+          t = TYPE_bool;
+          type = new Bool();
+        }
+        else if (left->get_type() == TYPE_real && right->get_type() == TYPE_int){
+          t = TYPE_bool;
+          type = new Bool();
+        }
+        else if ((left->get_type() == right->get_type()) && (left->get_type() != TYPE_array)){
+          t = TYPE_bool;
+          type = new Bool();
+        }
+        else {
+          std::cerr << "ERROR: Type mismatch for BinOp " << op << std::endl;
+          exit(1);
+        }
       }
       if ((! strcmp(op,"or")) || (!strcmp(op,"and"))){ //operands must be both booleans
-        if (left->type_check(TYPE_bool) && right->type_check(TYPE_bool)){
+      	std::string l_s = left->get_char_var();
+        std::string r_s = right->get_char_var();
+      	if (st.foundFunc(l_s) || st.foundFunc(r_s)){
+      		std::cerr << "ERROR: Cannot perform boolean expressions on functions\n";
+      		exit(1);
+      	}
+      	if (st.foundProc(l_s) || st.foundProc(r_s)){
+      		std::cerr << "ERROR: Cannot perform boolean expressions on procedures\n";
+      		exit(1);
+      	}
+        if (left->get_type() == TYPE_bool && right->get_type() == TYPE_bool){
+          t = TYPE_bool;
           type = new Bool();
         }
       }
@@ -851,75 +953,134 @@ public:
       Value *r = right->compile();
 
       if (! strcmp(op,"+")){
-        if((left->type_check(TYPE_real)) && (right->type_check(TYPE_real))) return Builder.CreateFAdd(l, r, "addftmp");
+        if((left->get_type() == TYPE_real) && (right->get_type() == TYPE_real)) {
+        	return Builder.CreateFAdd(l, r, "addftmp");
+        }
+        if((left->get_type() == TYPE_real) && (right->get_type() == TYPE_int)){
+        	Value *nr = Builder.CreateUIToFP(r, X86_FP80TyID, "ext");
+        	return Builder.CreateFAdd(l, nr, "addftmp");	
+        }
+        if((left->get_type() == TYPE_int) && (right->get_type() == TYPE_real)){
+        	Value *nl = Builder.CreateUIToFP(l, X86_FP80TyID, "ext");
+        	return Builder.CreateFAdd(nl, r, "addftmp");	
+        }
         return Builder.CreateAdd(l, r, "addtmp");
       }
       if (! strcmp(op,"-")){
-        if((left->type_check(TYPE_real)) && (right->type_check(TYPE_real))) return Builder.CreateFSub(l, r, "subftmp");
+        if((left->get_type() == TYPE_real) && (right->get_type() == TYPE_real)) {
+        	return Builder.CreateFSub(l, r, "subftmp");
+        }
+        if((left->get_type() == TYPE_real) && (right->get_type() == TYPE_int)){
+        	Value *nr = Builder.CreateUIToFP(r, X86_FP80TyID, "ext");
+        	return Builder.CreateFSub(l, nr, "subftmp");	
+        }
+        if((left->get_type() == TYPE_int) && (right->get_type() == TYPE_real)){
+        	Value *nl = Builder.CreateUIToFP(l, X86_FP80TyID, "ext");
+        	return Builder.CreateFSub(nl, r, "subftmp");	
+        }
         return Builder.CreateSub(l, r, "subtmp");
       }
       if (! strcmp(op,"*")){
-        if((left->type_check(TYPE_real)) && (right->type_check(TYPE_real))) return Builder.CreateFMul(l, r, "mulftmp");
+        if((left->get_type() == TYPE_real) && (right->get_type() == TYPE_real)) {
+        	return Builder.CreateFMul(l, r, "mulftmp");
+        }
+        if((left->get_type() == TYPE_real) && (right->get_type() == TYPE_int)){
+        	Value *nr = Builder.CreateUIToFP(r, X86_FP80TyID, "ext");
+        	return Builder.CreateFMul(l, nr, "mulftmp");	
+        }
+        if((left->get_type() == TYPE_int) && (right->get_type() == TYPE_real)){
+        	Value *nl = Builder.CreateUIToFP(l, X86_FP80TyID, "ext");
+        	return Builder.CreateFMul(nl, r, "mulftmp");	
+        }
         return Builder.CreateMul(l, r, "multmp");
       }
-      if (! strcmp(op, "/")) return Builder.CreateFDiv(l, r, "divftmp");
+      if (! strcmp(op, "/")) {
+      	if((left->get_type() == TYPE_int) && (right->get_type() == TYPE_int)) {
+        	Value *nr = Builder.CreateUIToFP(r, X86_FP80TyID, "ext");
+        	Value *nl = Builder.CreateUIToFP(l, X86_FP80TyID, "ext");
+        	return Builder.CreateFMul(nl, nr, "mulftmp");
+        }
+      	if((left->get_type() == TYPE_real) && (right->get_type() == TYPE_int)){
+        	Value *nr = Builder.CreateUIToFP(r, X86_FP80TyID, "ext");
+        	return Builder.CreateFDiv(l, nr, "divftmp");	
+        }
+        if((left->get_type() == TYPE_int) && (right->get_type() == TYPE_real)){
+        	Value *nl = Builder.CreateUIToFP(l, X86_FP80TyID, "ext");
+        	return Builder.CreateFDiv(nl, r, "divftmp");	
+        }
+      	return Builder.CreateFDiv(l, r, "divftmp");
+      }
       if (! strcmp(op, "=")){
-        if(left->type_check(TYPE_real) && right->type_check(TYPE_real)){
+        if(left->get_type() == TYPE_real && right->get_type() == TYPE_real){
           return Builder.CreateFCmpOEQ(l, r, "feqtmp"); // OEQ = ordered
         }
-        else if(left->type_check(TYPE_int) && right->type_check(TYPE_int)){
-          Value *v = Builder.CreateICmpEQ(l, r, "eqtmp");
-          v->print(errs());
+        else if(left->get_type() == TYPE_int && right->get_type() == TYPE_int){
+          // Value *v = Builder.CreateICmpEQ(l, r, "eqtmp");
+          // v->print(errs());
           return Builder.CreateICmpEQ(l, r, "eqtmp");
+        }
+        else if ((left->get_type() == TYPE_int) && (right->get_type() == TYPE_real)){
+        	Value *nr = Builder.CreateUIToFP(r, X86_FP80TyID, "ext");
+        	return Builder.CreateFCmpOEQ(l, nr, "feqtmp");
+        }
+        else if ((left->get_type() == TYPE_real) && (right->get_type() == TYPE_int)){
+        	Value *nl = Builder.CreateUIToFP(l, X86_FP80TyID, "ext");
+        	return Builder.CreateFCmpOEQ(nl, r, "feqtmp");
         }
       }
       if (! strcmp(op, "<")){
-        if(left->type_check(TYPE_real) && right->type_check(TYPE_real)){
+        if(left->get_type() == TYPE_real && right->get_type() == TYPE_real){
           return Builder.CreateFCmpOLT(l, r, "flttmp"); // less than
         }
-        else if(left->type_check(TYPE_int) && right->type_check(TYPE_int)){
+        else if(left->get_type() == TYPE_int && right->get_type() == TYPE_int){
           return Builder.CreateICmpSLT(l, r, "lttmp");
         }
       }
       if (! strcmp(op, ">")){
-        if(left->type_check(TYPE_real) && right->type_check(TYPE_real)){
+        if(left->get_type() == TYPE_real && right->get_type() == TYPE_real){
           return Builder.CreateFCmpOGT(l, r, "fgttmp"); // greater than
         }
-        else if(left->type_check(TYPE_int) && right->type_check(TYPE_int)){
+        else if(left->get_type() == TYPE_int && right->get_type() == TYPE_int){
           return Builder.CreateICmpSGT(l, r, "gttmp");
         }
       }
       if (! strcmp(op, "<=")){
-        if(left->type_check(TYPE_real) && right->type_check(TYPE_real)){
+        if(left->get_type() == TYPE_real && right->get_type() == TYPE_real){
           return Builder.CreateFCmpOLE(l, r, "fletmp"); // O = ordered
         }
-        else if(left->type_check(TYPE_int) && right->type_check(TYPE_int)){
+        else if(left->get_type() == TYPE_int && right->get_type() == TYPE_int){
           return Builder.CreateICmpSLE(l, r, "letmp");
         }
       }
       if (! strcmp(op, ">=")){
-        if(left->type_check(TYPE_real) && right->type_check(TYPE_real)){
+        if(left->get_type() == TYPE_real && right->get_type() == TYPE_real){
           return Builder.CreateFCmpOGE(l, r, "fgetmp"); // OEQ = ordered
         }
-        else if(left->type_check(TYPE_int) && right->type_check(TYPE_int)){
+        else if(left->get_type() == TYPE_int && right->get_type() == TYPE_int){
           return Builder.CreateICmpSGE(l, r, "getmp");
         }
       }
       if (! strcmp(op, "<>")){
-        if(left->type_check(TYPE_real) && right->type_check(TYPE_real)){
+        if(left->get_type() == TYPE_real && right->get_type() == TYPE_real){
           return Builder.CreateFCmpONE(l, r, "fnetmp"); // OEQ = ordered
         }
-        else if(left->type_check(TYPE_int) && right->type_check(TYPE_int)){
+        else if(left->get_type() == TYPE_int && right->get_type() == TYPE_int){
           return Builder.CreateICmpNE(l, r, "netmp");
         }
       }
       if (! strcmp(op, "div")) return Builder.CreateSDiv(l, r, "divtmp");
-      if (! strcmp(op, "mod")) return Builder.CreateSRem(l, r, "modtmp");
+      if (! strcmp(op, "mod")) {
+      	if(left->get_type() == TYPE_int && right->get_type() == TYPE_int){
+      		return Builder.CreateSRem(l, r, "modtmp");
+      	}
+      	return Builder.CreateSRem(l, r, "modtmp");
+      }
       if (! strcmp(op, "or")) return Builder.CreateOr(l, r, "ortmp");
       if (! strcmp(op, "and")) return Builder.CreateAnd(l, r, "andtmp");
       return nullptr;
     }
 private:
+  Types t;
   Type_not_from_llvm *type;
   Expr *left;
   char *op;
@@ -949,7 +1110,10 @@ public:
       if (! strcmp(op,"+")) return right->eval();
       if (! strcmp(op,"-")) return -right->eval();
       if (! strcmp(op,"not")) return !right->eval();
-    return 0; //this will never be reached
+      return 0; //this will never be reached
+    }
+    virtual Types get_type() override {
+    	return t;
     }
     virtual void sem() override {
       right->sem();
@@ -960,9 +1124,11 @@ public:
 
       if ((! strcmp(op,"+")) || (!strcmp(op,"-"))){ //operand must be number. result same type as number
         if (right->type_check(TYPE_real)){
+          t = TYPE_real;
           type = new Real();
         }
         if (right->type_check(TYPE_int)){
+          t = TYPE_int;
           type = new Int();
         }
         else {
@@ -970,7 +1136,8 @@ public:
         }
       }
       if (! strcmp(op,"not")) { //operand must be boolean
-        if (right->type_check(TYPE_bool)){
+        if (right->get_type() == TYPE_bool){
+          t = TYPE_bool;
           type = new Bool();
         }
       }
@@ -995,6 +1162,7 @@ public:
     	return nullptr;
     }
 private:
+	Types t;
   Type_not_from_llvm *type;
   char *op;
   Expr *right;  
@@ -1019,6 +1187,21 @@ public:
   virtual std::string get_char_var() override{
   	return var;
   }
+  virtual Types get_type() override{
+  	return type;
+  }
+  virtual bool type_check(Types t) override{
+    //sem();
+    if (type != t) {
+      return 0;
+    }
+    else {
+      return 1;
+    }
+  }
+  virtual bool isresult(){
+    return false;
+  }
   virtual void sem() override {
     type = st.lookup(var)->type;
     SymbolEntry *en = st.lookup(var);
@@ -1027,6 +1210,7 @@ public:
   virtual Value* compile() const override {
     return Builder.CreateLoad(calcAddr(var, "Id"));
   }
+
 private:
   Types type;
   std::string var;
@@ -1056,6 +1240,9 @@ public:
   virtual int eval() const override {
     return -1;
   }
+  virtual bool isresult(){
+    return false;
+  }
   virtual std::string get_char_var() override{
   	std::string id = lvalue->get_char_var();
   	return id;
@@ -1066,6 +1253,10 @@ public:
   }
   virtual bool isArElement() override{
     return true;
+  }
+  virtual Types get_type() override {
+  	std::string s = lvalue->get_char_var();
+  	return st.getArrayType(s);
   }
   virtual void sem() override {
     lvalue->sem();
@@ -1079,29 +1270,16 @@ public:
       expr->set_type(st.lookup("result")->type);
     }
     if (lvalue->get_type() != TYPE_array){
-      printOn(std::cout);
-      std::cout << " is not of type array!\n\n";
+      printOn(std::cerr);
+      std::cerr << " is not of type array!\n\n";
       exit(1);
     }
     else {
       if (expr->get_type() != TYPE_int) {
-        printOn(std::cout);
-        std::cout << " [] expr is not an integer\n";
+        printOn(std::cerr);
+        std::cerr << " [] expr is not an integer\n";
         exit(1);
       }
-    }
-    consttype = lvalue->get_array()->get_oftype();
-    if (consttype == TYPE_int){
-      type = new Int();
-    }
-    if (consttype == TYPE_bool){
-      type = new Bool();
-    }
-    if (consttype == TYPE_real){
-      type = new Real();
-    }
-    if (consttype == TYPE_char){
-      type = new Char();
     }
   }
   virtual Value* compile() const override { 
@@ -1175,6 +1353,9 @@ public:
   virtual int eval() const override {
     return -1;
   }
+  virtual bool isresult() {
+    return false;
+  }
   virtual void sem() override {
     expr->sem();
     
@@ -1183,7 +1364,7 @@ public:
     }
 
     if (!(expr->get_type() == TYPE_pointer)){
-      printOn(std::cout);
+      printOn(std::cerr);
       std::cerr << "Only pointer type can be dereferenced!\n";
       std::cerr << "expression is of type " << expr->get_type();
       exit(1);
@@ -1245,29 +1426,49 @@ public:
       std::string fname = st.getParent();
       Types ftype = st.lookup(fname)->type;
       if(ftype == TYPE_proc){
-        std::cerr << "A procedure cannot return a result (" << fname << ")\n"; 
+        std::cerr << "ERROR: A procedure cannot return a result (" << fname << ")\n"; 
+        exit(1);
       }
 
       Types resType = expr->get_type();
       if (resType == TYPE_array){
-       std::cerr << "Result cannot be of type Array (" << fname <<")";
+       std::cerr << "ERROR: Result cannot be of type Array (" << fname <<")";
+       exit(1);
       }
 
       if(!(resType == ftype)){
-       std::cerr << "ERROR: Type mismatch! " << fname << "is of type " << ftype << "but its result is of type " << resType;
+       std::cerr << "ERROR: Type mismatch! " << fname << " is of type " << ftype << " but its result is of type " << resType;
        exit(1);
       }
       lvalue->set_type(resType);
     }
     else{
       //not result
-        if (!expr->type_check(lvalue->get_type())) //{offset = lhs->offset;} //check again
-        { 
-          std::cerr << "Assign Type Missmatch in Expression:\n";
-          printOn(std::cerr);
-          std::cerr << lvalue->get_type() << " := " << expr->get_type() << "\n";
+    	std::string s = lvalue->get_char_var();
+    	// std::string r_s = expr->get_char_var();
+    	if (st.foundFunc(s)){
+    	  std::cerr << "ERROR: Assign Type Missmatch in Expression:\n";
+          std::cerr << lvalue->get_char_var() << " := " << expr->get_char_var() << "\n";
+          std::cerr << lvalue->get_char_var() << " is of type Function!\n";
           exit(1);
-        }
+    	}
+    	if (st.foundProc(s)){
+    	  std::cerr << "ERROR: Assign Type Missmatch in Expression:\n";
+          std::cerr << lvalue->get_char_var() << " := " << expr->get_char_var() << "\n";
+          std::cerr << lvalue->get_char_var() << " is of type Procedure!\n";
+          exit(1);
+    	}
+    	// st.lookup(s);
+    	// st.lookup(r_s);
+      if (expr->get_type() != lvalue->get_type()) //{offset = lhs->offset;} //check again
+      { 
+      	// std::cout << expr->get_type();
+      	// std::cout << lvalue->get_type();
+        std::cerr << "ERROR: Type Missmatch in assignment\n";
+        // printOn(std::cerr);
+        // std::cerr << s << " := " << r_s << "\n";
+        exit(1);
+      }
       }
   }
   virtual Value* compile() const override {
@@ -1275,9 +1476,8 @@ public:
     std::string s = lvalue->get_char_var();
     auto *right = expr->compile();
     if (s.compare("@") == 0){ // we have a result to return
-      std::string fname = loggedinfo.getLastFunc();
-      loggedinfo.storeResult(fname, right);
-      return nullptr;
+      auto *addr = calcAddr("result", "Assign", nullptr);
+      return Builder.CreateStore(right,addr);
     }
     if (lvalue->isArElement()){
       
@@ -1288,6 +1488,7 @@ public:
     }
     
     auto *addr = calcAddr(s, "Assign", nullptr);
+
     return Builder.CreateStore(right,addr);
   }
 private:
@@ -1306,11 +1507,16 @@ public:
     s += "Return()";
     return s;
   }
-  virtual Value* compile() const override { 
-  	// create a void return
-    llvm::ReturnInst *ret;
-    ret = Builder.CreateRetVoid();
-    return ret;
+  virtual Value* compile() const override {
+    llvm::BasicBlock * currentBlock = Builder.GetInsertBlock();
+    std::string fname = loggedinfo.getLastFunc();
+    llvm::BasicBlock * endfunc = loggedinfo.getEndOfFunc(fname);
+    llvm::Function *F = currentBlock->getParent();
+    llvm::BasicBlock * succ = llvm::BasicBlock::Create(TheContext, "succ", F);
+    Builder.CreateBr(succ);
+    Builder.SetInsertPoint(succ);
+    succ->moveBefore(endfunc);
+    return nullptr;
   }
 private:
 };
@@ -1379,6 +1585,9 @@ public:
   Types get_type() {
     return type->get_type();
   }
+  Types get_oftype(){
+    return type->get_oftype();
+  }
   std::vector<std::string> getIdList(){
     return id_list->getlist();
   }
@@ -1393,7 +1602,19 @@ public:
   virtual void sem() override {
     for (std::string i : id_list->getlist()){
       if(!st.foundForward(i)){
-        st.insert(i,type->get_type());
+      	if (i.compare("dummy4207210396") == 0) {}
+      	else{
+          if ((type->get_type() == TYPE_array) and (by == "PASS_BY_VALUE")){
+            std::cerr << "ERROR: Arrays should be passed by reference!\n";
+            exit(1);
+          }
+          if (by == "PASS_BY_REFERENCE"){
+            st.insertPointer(i, type->get_type());
+          }
+          else{
+            st.insert(i,type->get_type());  
+          }
+	      }
       }
     }
   }
@@ -1482,71 +1703,86 @@ public:
   }
   virtual void sem() override {
     std::string s = id;
-    if(expr_list) expr_list->sem();
+    if(expr_list) {
+      expr_list->sem();
+    }
     st.lookup(s);
+    if (isLibFunc(s)){
+      if (s.compare("writeInteger") == 0){
+        if (expr_list->getlist().at(0)->get_type() != TYPE_int){
+          std::cerr << "ERROR: writeInteger needs integer argument. A " << expr_list->getlist().at(0)->get_type() << " was given.\n";
+          exit(1);
+        }
+        else if (st.ispointer(expr_list->getlist().at(0)->get_char_var())){
+          std::cerr << "ERROR: writeInteger needs integer argument and not a pointer\n";
+          exit(1);
+        }
+      }
+      if (s.compare("writeBoolean") == 0){
+        if (expr_list->getlist().at(0)->get_type() != TYPE_bool){
+          std::cerr << "ERROR: writeBoolean needs boolean argument. A " << expr_list->getlist().at(0)->get_type() << " was given.\n";
+          exit(1);
+        }
+        else if (st.ispointer(expr_list->getlist().at(0)->get_char_var())){
+          std::cerr << "ERROR: writeBoolean needs boolean argument and not a pointer\n";
+          exit(1);
+        }
+      }
+      if (s.compare("writeChar") == 0){
+        if (expr_list->getlist().at(0)->get_type() != TYPE_char){
+          std::cerr << "ERROR: writeChar needs char argument. A " << expr_list->getlist().at(0)->get_type() << " was given.\n";
+          exit(1);
+        }
+        else if (st.ispointer(expr_list->getlist().at(0)->get_char_var())){
+          std::cerr << "ERROR: writeChar needs char argument and not a pointer\n";
+          exit(1);
+        }
+      }
+    }
     if (st.foundProc(s)){
       std::vector<Formal *> formal_list;
       int expected = 0;
       int given = 0;
-      formal_list = st.getFormalsProcedureAll(s)->getlist();
-      if(!formal_list.empty()){ //count how many args we expect the proc to have
-        for (Formal *f : formal_list){
-          expected += int(f->getIdList().size());
-          int formalsize;
-          formalsize = f->getIdList().size();
-          int j = 0;
-          for (int i = 0; i < formalsize; i++){
-            if (!(f->get_type() == expr_list->getlist().at(j)->get_type())){
-              std::cout << "ERROR: In procedure" << s << " type mismatch regarding arguments ";
-              std::cout << f->getIdList().at(j) << " and " << expr_list->getlist().at(i);
-              std::cout << ". One is of type ";
-              std::cout << f->get_type();
-              std::cout << " and the other one is of type ";
-              std::cout << expr_list->getlist().at(j)->get_type();
-              std::cout << "\n";
-              exit(1);
+      if (st.getFormalsProcedureAll(s)){
+        formal_list = st.getFormalsProcedureAll(s)->getlist();
+        if(expr_list) given = expr_list->getlist().size();
+        if (!formal_list.empty()){
+        	for (Formal *f : formal_list){
+        		expected += int(f->getIdList().size());
+        	}
+        }
+      }
+      if (given != expected) {
+        std::cerr << "ERROR: Procedure " << s << " needs " << expected <<" arguments. However " << given << " are given.\n";
+        exit(1);
+      }
+      if (st.getFormalsProcedureAll(s)){
+        if(!formal_list.empty()){ //count how many args we expect the proc to have
+        	int j = 0;
+          for (Formal *f : formal_list){
+            expected += int(f->getIdList().size());
+            int formalsize;
+            formalsize = f->getIdList().size();
+            for (int i = 0; i < formalsize; i++){
+              if (!(f->get_type() == expr_list->getlist().at(j)->get_type())){
+                std::cerr << "ERROR: In procedure" << s << " type mismatch regarding arguments ";
+                std::cerr << f->getIdList().at(j) << " and " << expr_list->getlist().at(j);
+                std::cerr << ". One is of type ";
+                std::cerr << f->get_type();
+                std::cerr << " and the other one is of type ";
+                std::cerr << expr_list->getlist().at(j)->get_type();
+                std::cerr << "\n";
+                exit(1);
+              }
               j++;
             }
           }
         }
-      }
-      if(expr_list) given = expr_list->getlist().size();
-      if (given != expected) {
-        std::cout << "ERROR: Procedure " << s << " needs " << expected <<" arguments. However " << given << " are given.\n";
-        exit(1);
       }
     }
     else if (st.foundFunc(s)){
-      std::vector<Formal *> formal_list;
-      int expected = 0;
-      int given = 0;
-      formal_list = st.getFormalsFuncAll(s)->getlist();
-      if(!formal_list.empty()){ //count how many args we expect the proc to have
-        for (Formal *f : formal_list){
-          expected += int(f->getIdList().size());
-          int formalsize;
-          formalsize = f->getIdList().size();
-          int j = 0;
-          for (int i = 0; i < formalsize; i++){
-            if (!(f->get_type() == expr_list->getlist().at(j)->get_type())){
-              std::cout << "ERROR: In Function" << s << " type mismatch regarding arguments ";
-              std::cout << f->getIdList().at(j) << " and " << expr_list->getlist().at(i);
-              std::cout << ". One is of type ";
-              std::cout << f->get_type();
-              std::cout << " and the other one is of type ";
-              std::cout << expr_list->getlist().at(j)->get_type();
-              std::cout << "\n";
-              exit(1);
-              j++;
-            }
-          }
-        }
-      }
-      if(expr_list) given = expr_list->getlist().size();
-      if (given != expected) {
-        std::cout << "ERROR: Function " << s << " needs " << expected <<" arguments. However " << given << " are given.\n";
-        exit(1);
-      }
+      std::cerr << "ERROR: A function can only be used as a right-value!\n";
+      exit(1);
     }
   }
   virtual Value* compile() const override { 
@@ -1557,70 +1793,94 @@ public:
     	Value *n = list.front()->compile();
     	if ((strcmp(id, "writeInteger")) == 0){
     		if (!n) {std::cerr << "there is no n\n";}
+        if (n->getType()->isPointerTy()) {
+          std::cerr << "ERROR: writeInteger expects integer not ^integer\n"; 
+          exit(1);
+        }
     		Value *n64 = Builder.CreateZExt(n, i64, "ext");
     		Builder.CreateCall(TheWriteInteger, std::vector<Value *> { n64 });
     	}
     	if ((strcmp(id, "writeBoolean")) == 0){
+        if (n->getType()->isPointerTy()) {
+          std::cerr << "ERROR: writeBoolean expects boolean not ^boolean\n"; 
+          exit(1);
+        }
     		//Value *n8 = Builder.CreateZExt(n, i8, "ext");
     		Builder.CreateCall(TheWriteBoolean, std::vector<Value *> { n });
     	}
     	if ((strcmp(id, "writeChar")) == 0){
+        if (n->getType()->isPointerTy()) {
+          std::cerr << "ERROR: writeChar expects char not ^char\n"; 
+          exit(1);
+        }
         Value *n8 = Builder.CreateZExtOrTrunc(n, i8, "extrunc");
     	  //Value *n8 = c8(n);
         Builder.CreateCall(TheWriteChar, std::vector<Value *> { n8 });
       }
       if ((strcmp(id, "writeReal")) == 0){
-        //Value *n8 = Builder.CreateTrunc(n, DoubleTyID, "extrunc");
+        if (n->getType()->isPointerTy()) {
+          std::cerr << "ERROR: writeReal expects real not ^real\n"; 
+          exit(1);
+        }
+        //Value *n8 = Builder.CreateTrunc(n, X86_FP80TyID, "extrunc");
         Builder.CreateCall(TheWriteReal, std::vector<Value *> { n });
       }
       if ((strcmp(id, "writeString")) == 0){
-        //Value *n8 = Builder.CreateZExt(n, i8, "ext");
+        // Value *n8 = Builder.CreateZExt(n, i8, "ext");
         Builder.CreateCall(TheWriteString, std::vector<Value *> { n });
       }
     }
     else {  //if it's user defined procedure
       
       std::string fname = id;
-      
       llvm::Function *F = loggedinfo.getProcInScope(fname);
       std::vector<llvm::Value*> argv;
-      std::vector<Expr *> ASTargs = expr_list->getlist();
-      auto itr = ASTargs.begin();
-      auto *ASTarg = *itr;
-
-      // loop through parameters
-      for (auto &Arg: F->args()){
-
-        llvm::Value *arg;
-        // function with no parameters, only outer scope ones
-        if (ASTargs.empty()) {
-          argv.push_back(deref(loggedinfo.getVarAlloca(Arg.getName().str())));
-          continue;
+      std::vector<Expr *> ASTargs;
+      if (expr_list == nullptr){
+        for (auto &Arg: F->args()){
+          // function with no parameters, only outer scope ones
+          if (ASTargs.empty()) {
+            argv.push_back(deref(loggedinfo.getVarAlloca(Arg.getName().str())));
+            continue;
+          }
         }
-
-        itr++;
-
-        //check if done with real parameters
-        if (ASTarg == nullptr) {
-          argv.push_back(deref(loggedinfo.getVarAlloca(Arg.getName().str())));
-          continue;
-        }
-        
-        // if expected argument is by value
-        if (!Arg.getType()->isPointerTy()){
-          arg = ASTarg->compile();
-        }
-        else {
-          //variable
-          std::string var = ASTarg->get_char_var();
-          arg = calcAddr(var, "ID", nullptr);
-        }
-
-        argv.push_back(arg);
-        if (itr != ASTargs.end()) ASTarg = *itr;
-
       }
-      
+      else {
+        ASTargs = expr_list->getlist();
+        auto itr = ASTargs.begin();
+        auto *ASTarg = *itr;
+        // loop through parameters
+        for (auto &Arg: F->args()){
+          llvm::Value *arg;
+          // function with no parameters, only outer scope ones
+          if (ASTargs.empty()) {
+            argv.push_back(deref(loggedinfo.getVarAlloca(Arg.getName().str())));
+            continue;
+          }
+
+          itr++;
+
+          //check if done with real parameters
+          if (ASTarg == nullptr) {
+            argv.push_back(deref(loggedinfo.getVarAlloca(Arg.getName().str())));
+            continue;
+          }
+          
+          // if expected argument is by value
+          if (!Arg.getType()->isPointerTy()){
+            arg = ASTarg->compile();
+          }
+          else {
+            //variable
+            std::string var = ASTarg->get_char_var();
+            arg = calcAddr(var, "ID", nullptr);
+          }
+
+          argv.push_back(arg);
+          if (itr != ASTargs.end()) ASTarg = *itr;
+
+        }
+      }
       
       return Builder.CreateCall(F,argv);
     }
@@ -1660,71 +1920,77 @@ public:
     s += ")";
     return s;
   }
+  virtual Types get_type() override {
+  	std::string s = id;
+  	if (isLibFunc(s)){
+  		if ((strcmp(id, "readInteger")) == 0) {return TYPE_int; }
+  		if ((strcmp(id, "readBoolean")) == 0) {return TYPE_bool; }
+  		if ((strcmp(id, "readChar")) == 0) {return TYPE_char; }
+  		if ((strcmp(id, "readReal")) == 0) {return TYPE_real; }
+  		if ((strcmp(id, "readString")) == 0) {return TYPE_string; }
+  		if ((strcmp(id, "abs")) == 0) { return TYPE_int;}
+  		if ((strcmp(id, "fabs")) == 0) { return TYPE_real;}
+  		if ((strcmp(id, "sqrt")) == 0) { return TYPE_real;}
+  		if ((strcmp(id, "sin")) == 0) { return TYPE_real;}
+  		if ((strcmp(id, "cos")) == 0) { return TYPE_real;}
+  		if ((strcmp(id, "tan")) == 0) { return TYPE_real;}
+  		if ((strcmp(id, "arctan")) == 0) { return TYPE_real;}
+  		if ((strcmp(id, "exp")) == 0) { return TYPE_real;}
+  		if ((strcmp(id, "ln")) == 0) { return TYPE_real;}
+  		if ((strcmp(id, "pi")) == 0) { return TYPE_real;}
+  		if ((strcmp(id, "trunc")) == 0) { return TYPE_int;}
+  		if ((strcmp(id, "round")) == 0) { return TYPE_int;}
+  		if ((strcmp(id, "chr")) == 0) { return TYPE_char;}
+  		if ((strcmp(id, "ord")) == 0) {return TYPE_int; }
+  	}
+  	else if (st.foundProc(s)){
+  		std::cerr << "ERROR: Procedures can only be of type void\n";
+  		exit(1);
+  	}
+  	else if (st.foundFunc(s)){
+  		return st.getFunctionType(s);
+  	}
+  	return TYPE_error;	// this should be unreachable
+  }
   virtual void sem() override {
     std::string s = id;
     if(expr_list) expr_list->sem();
     st.lookup(s);
     if (st.foundProc(s)){
-      std::vector<Formal *> formal_list;
-      int expected = 0;
-      int given = 0;
-      formal_list = st.getFormalsProcedureAll(s)->getlist();
-      if(!formal_list.empty()){ //count how many args we expect the proc to have
-        for (Formal *f : formal_list){
-          expected += int(f->getIdList().size());
-          int formalsize;
-          formalsize = f->getIdList().size();
-          int j = 0;
-          for (int i = 0; i < formalsize; i++){
-            if (!(f->get_type() == expr_list->getlist().at(j)->get_type())){
-              std::cout << "ERROR: In procedure" << s << " type mismatch regarding arguments ";
-              std::cout << f->getIdList().at(j) << " and " << expr_list->getlist().at(i);
-              std::cout << ". One is of type ";
-              std::cout << f->get_type();
-              std::cout << " and the other one is of type ";
-              std::cout << expr_list->getlist().at(j)->get_type();
-              std::cout << "\n";
-              exit(1);
-              j++;
-            }
-          }
-        }
-      }
-      if(expr_list) given = expr_list->getlist().size();
-      if (given != expected) {
-        std::cout << "ERROR: Procedure " << s << " needs " << expected <<" arguments. However " << given << " are given.\n";
-        exit(1);
-      }
+      std::cerr << "ERROR: A procedure returns void, so it cannot be used as a right-value\n";
+      exit(1);
     }
     else if (st.foundFunc(s)){
       std::vector<Formal *> formal_list;
       int expected = 0;
       int given = 0;
-      formal_list = st.getFormalsFuncAll(s)->getlist();
-      if(!formal_list.empty()){ //count how many args we expect the proc to have
-        for (Formal *f : formal_list){
-          expected += int(f->getIdList().size());
-          int formalsize;
-          formalsize = f->getIdList().size();
-          int j = 0;
-          for (int i = 0; i < formalsize; i++){
-            if (!(f->get_type() == expr_list->getlist().at(j)->get_type())){
-              std::cout << "ERROR: In Function" << s << " type mismatch regarding arguments ";
-              std::cout << f->getIdList().at(j) << " and " << expr_list->getlist().at(i);
-              std::cout << ". One is of type ";
-              std::cout << f->get_type();
-              std::cout << " and the other one is of type ";
-              std::cout << expr_list->getlist().at(j)->get_type();
-              std::cout << "\n";
-              exit(1);
-              j++;
+      if (st.getFormalsFuncAll(s)){
+        formal_list = st.getFormalsFuncAll(s)->getlist();
+        if(!formal_list.empty()){ //count how many args we expect the proc to have
+          for (Formal *f : formal_list){
+            expected += int(f->getIdList().size());
+            int formalsize;
+            formalsize = f->getIdList().size();
+            int j = 0;
+            for (int i = 0; i < formalsize; i++){
+              if (!(f->get_type() == expr_list->getlist().at(j)->get_type())){
+                std::cerr << "ERROR: In Function" << s << " type mismatch regarding arguments ";
+                std::cerr << f->getIdList().at(j) << " and " << expr_list->getlist().at(i);
+                std::cerr << ". One is of type ";
+                std::cerr << f->get_type();
+                std::cerr << " and the other one is of type ";
+                std::cerr << expr_list->getlist().at(j)->get_type();
+                std::cerr << "\n";
+                exit(1);
+                j++;
+              }
             }
           }
         }
       }
       if(expr_list) given = expr_list->getlist().size();
       if (given != expected) {
-        std::cout << "ERROR: Function " << s << " needs " << expected <<" arguments. However " << given << " are given.\n";
+        std::cerr << "ERROR: Function " << s << " needs " << expected <<" arguments. However " << given << " are given.\n";
         exit(1);
       }
     }
@@ -1927,42 +2193,55 @@ public:
       
       llvm::Function *F = loggedinfo.getFunctionInScope(fname);
       std::vector<llvm::Value*> argv;
-      std::vector<Expr *> ASTargs = expr_list->getlist();
-      auto itr = ASTargs.begin();
-      auto *ASTarg = *itr;
+      std::vector<Expr *> ASTargs;
 
-      // loop through parameters
-      for (auto &Arg: F->args()){
+      if (expr_list){
+        ASTargs = expr_list->getlist();
+        auto itr = ASTargs.begin();
+        auto *ASTarg = *itr;
+        // loop through parameters
+        for (auto &Arg: F->args()){
 
-        llvm::Value *arg;
-        // function with no parameters, only outer scope ones
-        if (ASTargs.empty()) {
-          argv.push_back(deref(loggedinfo.getVarAlloca(Arg.getName().str())));
-          continue;
+          llvm::Value *arg;
+          // function with no parameters, only outer scope ones
+          if (ASTargs.empty()) {
+            argv.push_back(deref(loggedinfo.getVarAlloca(Arg.getName().str())));
+            continue;
+          }
+
+          itr++;
+
+          // check if done with real parameters
+          if (ASTarg == nullptr) {
+            argv.push_back(deref(loggedinfo.getVarAlloca(Arg.getName().str())));
+            continue;
+          }
+          
+          // if expected argument is by value
+          if (!Arg.getType()->isPointerTy()){
+            arg = ASTarg->compile();
+          }
+          else {
+            //variable
+            std::string var = ASTarg->get_char_var();
+            arg = calcAddr(var, "ID", nullptr);
+          }
+
+          argv.push_back(arg);
+          if (itr != ASTargs.end()) ASTarg = *itr;
+
         }
-
-        itr++;
-
-        // check if done with real parameters
-        if (ASTarg == nullptr) {
-          argv.push_back(deref(loggedinfo.getVarAlloca(Arg.getName().str())));
-          continue;
-        }
-        
-        // if expected argument is by value
-        if (!Arg.getType()->isPointerTy()){
-          arg = ASTarg->compile();
-        }
-        else {
-          //variable
-          std::string var = ASTarg->get_char_var();
-          arg = calcAddr(var, "ID", nullptr);
-        }
-
-        argv.push_back(arg);
-        if (itr != ASTargs.end()) ASTarg = *itr;
-
       }
+      else {
+        for (auto &Arg: F->args()){
+          // function with no parameters, only outer scope ones
+          if (ASTargs.empty()) {
+            argv.push_back(deref(loggedinfo.getVarAlloca(Arg.getName().str())));
+            continue;
+          }
+        }
+      }
+      
       
       
       return Builder.CreateCall(F,argv);
@@ -2015,30 +2294,30 @@ public:
         brackets->set_type(st.lookup("result")->type);
       }
       if (lvalue->get_type() != TYPE_pointer){
-        std::cout << "\nError: In expression: ";
-        printOn(std::cout);
-        std::cout << "\nleft value of the expression must be of type pointer but it's of type: " << lvalue->get_type() << "\n";
+        std::cerr << "\nError: In expression: ";
+        printOn(std::cerr);
+        std::cerr << "\nleft value of the expression must be of type pointer but it's of type: " << lvalue->get_type() << "\n";
         exit(1);
       }
       else{
         if (lvalue->get_type() == TYPE_pointer){
           if (lvalue->get_pointer()->get_oftype() != TYPE_array){
-            std::cout << "\nERORR: In expression: ";
-            printOn(std::cout);
-            std::cout << "\nleft value of the expression must be of type pointer to array but it's a pointer to ";
-            std::cout << lvalue->get_pointer()->get_oftype();
-            std::cout << "\n";
+            std::cerr << "\nERORR: In expression: ";
+            printOn(std::cerr);
+            std::cerr << "\nleft value of the expression must be of type pointer to array but it's a pointer to ";
+            std::cerr << lvalue->get_pointer()->get_oftype();
+            std::cerr << "\n";
             exit(1);
           }
         }
         
       }
       if (brackets->get_type() != TYPE_int){
-        std::cout << "\nERROR: In expression: ";
-        printOn(std::cout);
-        std::cout << "\nthe expression inside the brackets must be of type integer but it's of type: ";
-        std::cout << brackets->get_type();
-        std::cout << "\n";
+        std::cerr << "\nERROR: In expression: ";
+        printOn(std::cerr);
+        std::cerr << "\nthe expression inside the brackets must be of type integer but it's of type: ";
+        std::cerr << brackets->get_type();
+        std::cerr << "\n";
         exit(1);
       }
       st.makeNew(lvalue->getstring());
@@ -2050,9 +2329,9 @@ public:
         lvalue->set_type(st.lookup("result")->type);
       }
       if (lvalue->get_type() != TYPE_pointer){
-        std::cout << "\nERROR: In expression: ";
-        printOn(std::cout);
-        std::cout << "\nleft value of the expression must be of type pointer but it's of type: " << lvalue->get_type() << "\n";
+        std::cerr << "\nERROR: In expression: ";
+        printOn(std::cerr);
+        std::cerr << "\nleft value of the expression must be of type pointer but it's of type: " << lvalue->get_type() << "\n";
         exit(1);
       }
       st.makeNew(lvalue->getstring());
@@ -2102,16 +2381,16 @@ public:
     std::string s_id;
     s_id = id;
     if (!st.isLabel(s_id)){
-      std::cout << "\nERORR: In expression: ";
-      printOn(std::cout);
-      std::cout << "\n" << s_id << "is not a label!\n";
+      std::cerr << "\nERORR: In expression: ";
+      printOn(std::cerr);
+      std::cerr << "\n" << s_id << "is not a label!\n";
       exit(1);
     }
     else {
      if (!st.LabelHasStmt(s_id)){
-       std::cout << "\nERORR: In expression: ";
-       printOn(std::cout);
-       std::cout << "\nLabel " << s_id << " does not correspond to a statement!\n";
+       std::cerr << "\nERORR: In expression: ";
+       printOn(std::cerr);
+       std::cerr << "\nLabel " << s_id << " does not correspond to a statement!\n";
        exit(1);
      }
     }
@@ -2150,7 +2429,7 @@ public:
     s += ")";
     return s;
   }
-  virtual Types get_type() {
+  virtual Types get_type() override{
     return type->get_type();
   }
   virtual int eval() const override {return cons; }
@@ -2190,7 +2469,7 @@ public:
     s += ")";
     return s;
   }
-  virtual Types get_type() {
+  virtual Types get_type() override{
     return type->get_type();
   }
   virtual int eval() const override { return cons; }
@@ -2202,7 +2481,7 @@ private:
 
 class Realconst: public Rvalue {
 public:
-  Realconst(double r): cons(r) {
+  Realconst(long double r): cons(r) {
     type = new Real();
   }
   virtual void printOn(std::ostream &out) const override {
@@ -2217,14 +2496,14 @@ public:
     s += ")";
     return s;
   }
-  virtual Types get_type() {
+  virtual Types get_type() override{
     return type->get_type();
   }
   virtual int eval() const override { return cons; }
-  virtual Value* compile() const override { return fp32(cons);}
+  virtual Value* compile() const override { return Builder.CreateFPExt(fp32(cons), X86_FP80TyID, "ext");}
 private:
   Type_not_from_llvm *type;
-  double cons;
+  float cons;
 };
 
 class Charconst: public Rvalue {
@@ -2244,7 +2523,7 @@ public:
     s += ")";
     return s;
   }
-  virtual Types get_type() {
+  virtual Types get_type() override{
     return type->get_type();
   }
   virtual int eval() const override { return 0; }
@@ -2272,8 +2551,11 @@ public:
     s += ")";
     return s;
   }
-  virtual Types get_type() {
+  virtual Types get_type() override{
     return TYPE_array;
+  }
+  virtual bool isresult() {
+    return false;
   }
   virtual int eval() const override { return 0; }
   virtual Value* compile() const override { 
@@ -2298,7 +2580,7 @@ public:
     s += "Nil()";
     return s;
   }
-  virtual Types get_type() {
+  virtual Types get_type() override{
     return type;
   }
   virtual int eval() const override { return 0; } //huh?
@@ -2339,15 +2621,15 @@ public:
         lvalue->set_type(st.lookup("result")->type);
       }
       if (lvalue->get_type() != TYPE_pointer){
-        std::cout << "\nERROR: In expression: ";
-        printOn(std::cout);
-        std::cout << "\nleft value of the expression must be of type pointer but it's of type: " << lvalue->get_type() << "\n";
+        std::cerr << "\nERROR: In expression: ";
+        printOn(std::cerr);
+        std::cerr << "\nleft value of the expression must be of type pointer but it's of type: " << lvalue->get_type() << "\n";
         exit(1);
       }
       if (!st.isNew(lvalue->getstring())){
-        std::cout << "\nERROR: In expression: ";
-        printOn(std::cout);
-        std::cout << "\nleft value of the expression must be created from a new l-value\n";
+        std::cerr << "\nERROR: In expression: ";
+        printOn(std::cerr);
+        std::cerr << "\nleft value of the expression must be created from a new l-value\n";
         exit(1);
       }
       lvalue = nullptr;
@@ -2358,24 +2640,24 @@ public:
         lvalue->set_type(st.lookup("result")->type);
       }
       if (lvalue->get_type() != TYPE_pointer) {
-        std::cout << "\nERROR: In expression: ";
-        printOn(std::cout);
-        std::cout << "\nleft value of the expression must be of type pointer but it's of type: " << lvalue->get_type() << "\n";
+        std::cerr << "\nERROR: In expression: ";
+        printOn(std::cerr);
+        std::cerr << "\nleft value of the expression must be of type pointer but it's of type: " << lvalue->get_type() << "\n";
         exit(1);
       }
       if (!st.isNew(lvalue->getstring())){
-        std::cout << "\nERROR: In expression: ";
-        printOn(std::cout);
-        std::cout << "\nleft value of the expression must be created from a new l-value\n";
+        std::cerr << "\nERROR: In expression: ";
+        printOn(std::cerr);
+        std::cerr << "\nleft value of the expression must be created from a new l-value\n";
         exit(1);
       }
       if (lvalue->get_type() == TYPE_pointer){
         if (lvalue->get_pointer()->get_oftype() != TYPE_array){
-          std::cout << "\nERROR: In expression: ";
-          printOn(std::cout);
-          std::cout << "\nleft value of the expression must be of type pointer to array but it's pointer to ";
-          std::cout << lvalue->get_pointer()->get_oftype();
-          std::cout << "\n";
+          std::cerr << "\nERROR: In expression: ";
+          printOn(std::cerr);
+          std::cerr << "\nleft value of the expression must be of type pointer to array but it's pointer to ";
+          std::cerr << lvalue->get_pointer()->get_oftype();
+          std::cerr << "\n";
           exit(1);
         }
       }
@@ -2418,14 +2700,14 @@ public:
     if(cond->get_type() == TYPE_result){
       cond->set_type(st.lookup("result")->type);
     }
-    if (cond->type_check(TYPE_bool)){
+    if (cond->get_type() == TYPE_bool){
       stmt1->sem();
       if (stmt2 != nullptr) stmt2->sem();
     }
     else {
-      std::cout << "\nERORR: In expression: ";
-      printOn(std::cout);
-      std::cout << "\nCondition is not of type bool!\n";
+      std::cerr << "\nERORR: In expression: ";
+      printOn(std::cerr);
+      std::cerr << "\nCondition is not of type bool!\n";
       exit(1);
     }
   }
@@ -2486,13 +2768,13 @@ public:
       if (cond->get_type() == TYPE_result){
         cond->set_type(st.lookup("result")->type);
       }
-      if (cond->type_check(TYPE_bool)){
+      if (cond->get_type() == TYPE_bool){
         stmt->sem();
       }
       else {
-        std::cout << "\nERORR: In expression: ";
-        printOn(std::cout);
-        std::cout << "\nCondition is not of type bool!\n";
+        std::cerr << "\nERORR: In expression: ";
+        printOn(std::cerr);
+        std::cerr << "\nCondition is not of type bool!\n";
         exit(1);
       }
   }
@@ -2547,11 +2829,13 @@ public:
   }
   virtual void sem() override {
     std::string parent = st.getParent();
-    if(st.getFormalsFuncAll(parent)){
+    if(st.getFormalsFuncAll(parent) and (!st.formalsFuncDone(parent))){
       st.getFormalsFuncAll(parent)->sem();
+      st.setformalsFuncDone(parent);
     }
-    else if(st.getFormalsProcedureAll(parent)){
+    else if(st.getFormalsProcedureAll(parent) and (!st.formalsProcDone(parent))){
       st.getFormalsProcedureAll(parent)->sem();
+      st.setformalsProcDone(parent);
     }
     stmtlist->sem();
   }
@@ -2670,6 +2954,9 @@ public:
   virtual void sem() {
     for (std::string s : id_list->getlist()) {
       st.insert(s, type->get_type());
+      if (type->get_type() == TYPE_array){
+      	st.insert_array_type(s, type->get_oftype());
+      }
     }
   }
   virtual Value* compile() const override {   
@@ -2678,7 +2965,7 @@ public:
       
       if (type->get_size() == -1){  //array is not allocated yet. will be with a "new" statement
         for (std::string var : id_list->getlist()){
-          auto *t = type_to_llvm(type->get_oftype());
+          auto *t = type_to_llvm(type->get_oftype(), "PASS_BY_VALUE", true);
           loggedinfo.addVariable(var, nullptr, nullptr);
           loggedinfo.arrayType(var, t);
         }
@@ -2687,9 +2974,10 @@ public:
       else{ // array size was declared, so allocate the array
         
         for (std::string var : id_list->getlist()){
-          auto *t = type_to_llvm(type->get_oftype());
           
           int num = type->get_size();
+
+          auto *t = type_to_llvm(type->get_oftype(), "PASS_BY_VALUE", true);
           
           auto *vtype = llvm::ArrayType::get(t, num);
           
@@ -2697,7 +2985,8 @@ public:
           
           loggedinfo.addVariable(var, vtype, valloca);
           
-          loggedinfo.arrayType(var, t);
+          loggedinfo.arrayType(var, vtype);
+          // loggedinfo.arrayType(var, t);
           
           }
           return nullptr;
@@ -2761,7 +3050,7 @@ public:
     s += ")";
     return s;
   }
-  virtual void sem () override {
+  virtual void sem() override {
     for (Decl *d : decl_list){
       d->sem();
     }
@@ -2783,6 +3072,17 @@ class Header: public AST{
 public:
   virtual void printOn(std::ostream &out) const = 0;
   virtual std::string getstring() { return "Header()";}
+  virtual bool type_check(Types t) {
+    return -1;
+  }
+  virtual Types get_type(){
+    return type;
+  }
+  virtual void set_type(Types t){
+    type = t;
+  }
+private:
+	Types type;
 };
 
 class Procedure: public Header {
@@ -2816,6 +3116,18 @@ public:
     s += ")";
     return s;
   }
+  bool type_check(Types t) override{
+    //sem();
+    if (TYPE_proc != t) {
+      return 0;
+    }
+    else {
+      return 1;
+    }
+  }
+  virtual Types get_type() override {
+    return TYPE_proc;
+  }
   virtual void semfor() override {
     forward = true;
     std::string s = id;
@@ -2829,7 +3141,7 @@ public:
       forward_decl = st.getFormalsProcedureAll(s)->getstring();
       current_decl = formal_list->getstring();
       if (forward_decl.compare(current_decl)){
-        std::cout << "ERROR in procedure " << s << ". It was forward declared with arguments " << forward_decl << " but now it has arguments " << current_decl << "\n";
+        std::cerr << "ERROR in procedure " << s << ". It was forward declared with arguments " << forward_decl << " but now it has arguments " << current_decl << "\n";
         exit(1);
       }
       st.clearForDecl(s);
@@ -2886,6 +3198,18 @@ public:
     s += ")";
     return s;
   }
+  bool type_check(Types t) override{
+    //sem();
+    if (TYPE_func != t) {
+      return 0;
+    }
+    else {
+      return 1;
+    }
+  }
+  virtual Types get_type() override {
+    return TYPE_func;
+  }
   virtual void semfor() override {
     forward = true;
     std::string s = id;
@@ -2894,25 +3218,43 @@ public:
   virtual void sem() override {
     std::string s = id;
     if (type->get_type() == TYPE_array){
-      std::cout << "ERROR: Function " << s << " can not be of type ARRAY!";
+      std::cerr << "ERROR: Function " << s << " can not be of type ARRAY!";
       exit(1);
     }
     if (st.foundForward(s)){
       std::string forward_decl;
       std::string current_decl;
-      forward_decl = st.getFormalsFuncAll(s)->getstring();
-      current_decl = formal_list->getstring();
-      if (forward_decl.compare(current_decl)){
-        std::cout << "ERROR in function " << s << ". It was forward declared with arguments " << forward_decl << " but now it has arguments " << current_decl << "\n";
-        exit(1);
+      if (st.getFormalsFuncAll(s)){
+      	if (formal_list){
+      		forward_decl = st.getFormalsFuncAll(s)->getstring();
+	        current_decl = formal_list->getstring();
+	        if (forward_decl.compare(current_decl)){
+	          std::cerr << "ERROR in function " << s << ". It was forward declared with arguments " << forward_decl << " but now it has arguments " << current_decl << "\n";
+	          exit(1);
+	        }
+	        st.clearForDecl(s);
+	        st.insertParent(s);
+	        // formal_list->sem();
+      	}
+      	else{
+      		forward_decl = st.getFormalsFuncAll(s)->getstring();
+      		std::cerr << "ERROR in function " << s << ". It was forward declared with arguments " << forward_decl << " but now it has no arguments\n";
+	        exit(1);
+      	}
       }
-      st.clearForDecl(s);
-      st.insertParent(s);
-      formal_list->sem();
+      else{
+      	st.clearForDecl(s);
+      	st.insertParent(s);
+      }
     }
     else {
-      st.insertFunction(s, type->get_type(), formal_list, forward);
-      formal_list->sem();
+      if (formal_list){
+        st.insertFunction(s, type->get_type(), formal_list, forward);
+      }
+      else{
+      	
+        st.insertFunction(s, type->get_type(), formal_list, forward);
+      }
     }
   }
   virtual Value* compile() const override {
@@ -2922,10 +3264,10 @@ public:
     loggedinfo.addFuncFormals(fname,formal_list);
     llvm::Type *retType;
     if (type->get_type() == TYPE_array){
-      retType = type_to_llvm(TYPE_int);
+      retType = type_to_llvm(type->get_oftype());		// this should be unreachable
     }
     else if (type->get_type() == TYPE_pointer){
-      retType = type_to_llvm(TYPE_int);
+      retType = type_to_llvm(type->get_oftype());
     }
     else{
       retType = type_to_llvm(type->get_type());  
@@ -3160,31 +3502,42 @@ public:
 
       Builder.CreateRet(c32(0));
 
-      if (llvm::verifyFunction(*main, &llvm::errs())) {std::cout << "Somethings wrong!\n";}
+      if (llvm::verifyFunction(*main, &llvm::errs())) {std::cerr << "Somethings wrong! LLVM couldn't verify Function\n";}
       loggedinfo.closeScope();
       return nullptr;
     }
     else if (!(loggedinfo.isProcStackEmpty())){ //this is the body of a procedure
-
+      std::vector<Formal *> params;
+      Formal_list * fl;
       std::string pname = loggedinfo.getLastProc();
-      Formal_list * fl = loggedinfo.getProcFormals(pname);
-      std::vector<Formal *> params = fl->getlist();
       std::vector<std::string> parameterNames;
       std::vector<llvm::Type *> parameterTypes;
+      if (loggedinfo.getProcFormals(pname)){
+        fl = loggedinfo.getProcFormals(pname);
+        params = fl->getlist(); 
+      }
+      
       std::vector<std::string> outerScopeVarsNames;
       unordered_map<std::string, llvm::Type *> outerScopeVarsTypes;
       unordered_map<std::string, llvm::AllocaInst*> outerScopeVarsAllocas;
       llvm::Type *retType = Type::getVoidTy(TheContext);
 
-      // first log param types and names
-      for (Formal *f : params){
+      if (loggedinfo.getProcFormals(pname)){
+        // first log param types and names
+        for (Formal *f : params){
 
-        std::vector<std::string> id_list;
-        id_list = f->getIdList();
-        for (std::string name : id_list){
-          // std::string name = id;
-          parameterNames.push_back(name);
-          parameterTypes.push_back(type_to_llvm(f->get_type(),f->getby()));
+          std::vector<std::string> id_list;
+          id_list = f->getIdList();
+          for (std::string name : id_list){
+            // std::string name = id;
+            parameterNames.push_back(name);
+            if (f->get_type() == TYPE_array){
+              parameterTypes.push_back(type_to_llvm(f->get_oftype(),f->getby(), true));
+            }
+            else{
+              parameterTypes.push_back(type_to_llvm(f->get_type(),f->getby()));
+            }
+          }
         }
       }
 
@@ -3229,6 +3582,7 @@ public:
 
       // compile local_list
       std::vector<Local *> local_definitions;
+      local_definitions = local_list->getlist();
       for (Local *l : local_definitions){
         l->compile();
         Builder.SetInsertPoint(BB);
@@ -3239,41 +3593,45 @@ public:
 
       // check if the instruction "return" terminates our block
       if (!BB->getTerminator()){
-      	std::cout << "Procedure " << pname << " lacks a terminator. Maybe you forgot 'return' ? \n";
-      	exit(1);
+      	// llvm::ReturnInst *ret;
+    		Builder.CreateRetVoid();
+      	//exit(1);
       }
-
       if (llvm::verifyFunction(*P, &llvm::errs())) {
-        std::cout << "Somethings wrong! LLVM couldn't verify Procedure " << pname <<"\n";
+        std::cerr << "Somethings wrong! LLVM couldn't verify Procedure " << pname <<"\n";
         exit(1);
       }
       loggedinfo.closeScope();
       loggedinfo.removeCurrProc();
+      
       return nullptr;
 
 
     }
     else { //this is the body of a function
 
-	  std::string fname = loggedinfo.getLastFunc();
-      Formal_list * fl = loggedinfo.getFuncFormals(fname);
+	    std::string fname = loggedinfo.getLastFunc();
+      Formal_list * fl;
       llvm::Type *retType = loggedinfo.getFuncType(fname);
-      std::vector<Formal *> params = fl->getlist();
+      std::vector<Formal *> params;
       std::vector<std::string> parameterNames;
       std::vector<llvm::Type *> parameterTypes;
       std::vector<std::string> outerScopeVarsNames;
       unordered_map<std::string, llvm::Type *> outerScopeVarsTypes;
       unordered_map<std::string, llvm::AllocaInst*> outerScopeVarsAllocas;
       
-
-      // first log param types and names
-      for (Formal *f : params){
-        std::vector<std::string> id_list;
-        id_list = f->getIdList();
-        for (std::string name : id_list){
-          // std::string name = id;
-          parameterNames.push_back(name);
-          parameterTypes.push_back(type_to_llvm(f->get_type(),f->getby()));
+      if (loggedinfo.getFuncFormals(fname)){
+        fl = loggedinfo.getFuncFormals(fname);
+        params = fl->getlist();
+        // first log param types and names
+        for (Formal *f : params){
+          std::vector<std::string> id_list;
+          id_list = f->getIdList();
+          for (std::string name : id_list){
+            // std::string name = id;
+            parameterNames.push_back(name);
+            parameterTypes.push_back(type_to_llvm(f->get_type(),f->getby()));
+          }
         }
       }
 
@@ -3303,6 +3661,7 @@ public:
 
       loggedinfo.openScope();
 
+
       //this is necessary for result assignment
       loggedinfo.pushFunc(fname);
       // now, let's set all param names
@@ -3310,7 +3669,14 @@ public:
       for (auto &arg : F->args()) arg.setName(parameterNames[Idx++]);
 
       llvm::BasicBlock *BB = llvm::BasicBlock::Create(TheContext, "", F);
+      llvm::BasicBlock *EndOfFunc = llvm::BasicBlock::Create(TheContext, "endfunc", F);
       Builder.SetInsertPoint(BB);
+
+      loggedinfo.storeEndOfFunc(fname, EndOfFunc);
+      std::string var = "result";
+      auto *valloca = Builder.CreateAlloca(retType, nullptr, var); 
+      //log result variable
+      loggedinfo.addVariable(var, retType, valloca);
 
       // create allocas for params
       for (auto &arg : F->args()) {
@@ -3321,6 +3687,7 @@ public:
 
       // compile local_list
       std::vector<Local *> local_definitions;
+      local_definitions = local_list->getlist();
       for (Local *l : local_definitions){
         l->compile();
         Builder.SetInsertPoint(BB);
@@ -3330,11 +3697,13 @@ public:
       block->compile();
 
       // create result return
-      llvm::Value * result = loggedinfo.getFuncResult(fname);
+      Builder.CreateBr(EndOfFunc);
+      Builder.SetInsertPoint(EndOfFunc);
+      llvm::Value * result = Builder.CreateLoad(calcAddr("result", "Id"));
       Builder.CreateRet(result);
 
       if (llvm::verifyFunction(*F, &llvm::errs())) {
-        std::cout << "Somethings wrong!LLVM couldn't verify Function " << fname << "\n";
+        std::cerr << "Somethings wrong!LLVM couldn't verify Function " << fname << "\n";
         exit(1);
       }
       loggedinfo.removeCurrFunc();
