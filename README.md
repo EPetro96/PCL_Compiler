@@ -45,6 +45,6 @@ optional arguments:
                  (default: a.out)  
                  
 ## Known Issues
-1) There is no support for real numbers (this was optional in the projects instructions)  
+1) There is partial support for real numbers (this was optional in the projects instructions)  
 2) Function "readString" is not working  
 3) Forward Declarations of Functions/Procedures do not work  
